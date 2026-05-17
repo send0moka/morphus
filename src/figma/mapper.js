@@ -123,6 +123,7 @@ function buildNode(node, parentContext, ctx, path) {
       ? getRenderableInlineLayout(node)
       : null;
   const flexAutoMarginLayout = isFlex ? getFlexAutoMarginLayoutOverride(node, layout) : null;
+  const nativeControlLayout = getNativeControlLayout(node);
 
   // Check if a grid strategy was provided for this element
   const gridClass = classList?.find(c => ctx.gridStrategies?.[`.${c}`]);
@@ -162,6 +163,7 @@ function buildNode(node, parentContext, ctx, path) {
     opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
     ...(layout || {}),
     ...(flexAutoMarginLayout || {}),
+    ...(nativeControlLayout || {}),
     ...(computed.mixBlendMode && computed.mixBlendMode !== 'normal' ? {
       blendMode: computed.mixBlendMode.toUpperCase().replace(/-/g, '_'),
     } : {}),
@@ -198,6 +200,7 @@ function buildNode(node, parentContext, ctx, path) {
   if (controlTextNode) {
     childNodes.push(controlTextNode);
   }
+  childNodes.push(...buildFormControlDecorationNodes(node, `${path}.control`));
 
   const pseudoChildren = (node.pseudoChildren || []).concat(getNativePseudoChildren(node));
   const mergeablePseudoBackgrounds = [];
@@ -501,6 +504,75 @@ function buildFormControlTextNode(node, ctx, path, resolvedRect = null, textTrun
     textTruncationContext,
     tableCellAutoWidth
   );
+}
+
+function buildFormControlDecorationNodes(node, path) {
+  if (!isNativeSelectControl(node) || node.formControl.hasChevron === false) {
+    return [];
+  }
+
+  return [buildSelectChevronNode(node, path)];
+}
+
+function getNativeControlLayout(node) {
+  if (!isNativeSelectControl(node) || node.formControl.hasChevron === false) {
+    return null;
+  }
+
+  return {
+    layoutMode: 'HORIZONTAL',
+    primaryAxisAlignItems: 'SPACE_BETWEEN',
+    counterAxisAlignItems: 'CENTER',
+    itemSpacing: 0,
+    primaryAxisSizingMode: 'FIXED',
+    counterAxisSizingMode: 'FIXED',
+  };
+}
+
+function isNativeSelectControl(node) {
+  return node?.tag === 'select' && node?.formControl?.type === 'select';
+}
+
+function buildSelectChevronNode(node, path) {
+  const computed = node.computed || {};
+  const rect = node.rect || { width: 0, height: 0 };
+  const fontSize = parsePx(computed.fontSize) || 16;
+  const width = Math.max(Math.round(fontSize * 0.72), 10);
+  const height = Math.max(Math.round(fontSize * 0.44), 6);
+  const rightInset = parsePx(computed.paddingRight);
+  const color = computed.color || 'rgb(0, 0, 0)';
+
+  return {
+    id: buildStableId(node.tag, node.classList, `${path}-chevron`),
+    name: `${buildName(node.tag, node.classList)} / chevron`,
+    type: 'SVG',
+    x: Math.max(Math.round((rect.width || 0) - rightInset - width), 0),
+    y: Math.max(Math.round(((rect.height || 0) - height) / 2), 0),
+    width,
+    height,
+    opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
+    _svgMarkup: makeChevronDownSvg(width, height, color),
+  };
+}
+
+function makeChevronDownSvg(width, height, color) {
+  const stroke = escapeSvgAttribute(color || 'rgb(0, 0, 0)');
+  const strokeWidth = Math.max(Math.round(Math.min(width, height) * 0.22), 2);
+  const left = strokeWidth / 2;
+  const right = width - strokeWidth / 2;
+  const top = Math.max(strokeWidth / 2, 1);
+  const bottom = height - strokeWidth / 2;
+  const mid = width / 2;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none"><path d="M${left} ${top} L${mid} ${bottom} L${right} ${top}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function escapeSvgAttribute(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function resolveFormControlText(formControl) {

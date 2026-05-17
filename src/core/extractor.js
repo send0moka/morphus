@@ -432,10 +432,11 @@ function walkDOMInBrowser() {
       && !hasRenderablePseudo(csAfter)
       && canCollapseToTextContainer(el, tag, cs, hasOnlyInlineTextChildren);
 
-    const textData = rawText ? extractTextData(el) : null;
     const beforeData = extractPseudoElementData(el, tag, cs, csBefore, 'before');
     const afterData = extractPseudoElementData(el, tag, cs, csAfter, 'after');
     const formControl = extractFormControlData(el, tag, cs);
+    const nodeText = formControl ? null : rawText;
+    const textData = nodeText ? extractTextData(el) : null;
     const svgMarkup = isSvg ? serializeSvgElement(el, rect) : null;
     const imageData = isImage
       ? extractImageData(el)
@@ -443,7 +444,7 @@ function walkDOMInBrowser() {
         ? extractCanvasImageData(el)
         : null;
 
-    const children = isSvg || isImage || isCanvas || isTextContainer
+    const children = isSvg || isImage || isCanvas || isTextContainer || formControl
       ? []
       : Array.from(el.childNodes)
           .map((child) => getChildNode(child, el, cs, depth + 1))
@@ -453,7 +454,7 @@ function walkDOMInBrowser() {
       tag,
       id: el.id || null,
       classList: Array.from(el.classList),
-      text: rawText || null,
+      text: nodeText || null,
       textRuns: textData?.runs || [],
       isTextContainer,
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
@@ -470,6 +471,10 @@ function walkDOMInBrowser() {
   }
 
   function extractFormControlData(el, tag, computedStyles) {
+    if (tag === 'select') {
+      return extractSelectControlData(el);
+    }
+
     if (tag !== 'input' && tag !== 'textarea') {
       return null;
     }
@@ -500,6 +505,31 @@ function walkDOMInBrowser() {
       value,
       placeholder,
       ...(placeholderComputed ? { placeholderComputed } : {}),
+    };
+  }
+
+  function extractSelectControlData(el) {
+    const selectedOptions = Array.from(el.selectedOptions || []);
+    const renderedOptions = selectedOptions.length > 0
+      ? selectedOptions
+      : [el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null].filter(Boolean);
+    const renderedText = normalizeFormControlText(
+      renderedOptions
+        .map((option) => option.label || option.textContent || '')
+        .filter(Boolean)
+        .join(el.multiple ? '\n' : ' ')
+    );
+
+    if (!renderedText) {
+      return null;
+    }
+
+    const size = Number.parseInt(el.getAttribute('size') || '1', 10);
+    return {
+      type: 'select',
+      value: renderedText,
+      optionValue: renderedOptions[0] ? renderedOptions[0].value : el.value,
+      hasChevron: !el.multiple && (!Number.isFinite(size) || size <= 1),
     };
   }
 

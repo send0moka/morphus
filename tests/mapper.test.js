@@ -814,6 +814,51 @@ test('maps form control placeholders into text nodes from extracted metadata', (
   expect(placeholder.fills[0].opacity).toBeCloseTo(0.42, 2);
 });
 
+test('maps native select controls to selected text and a chevron only', () => {
+  const select = frameNode({
+    tag: 'select',
+    classList: ['filter'],
+    rect: { x: 0, y: 0, width: 304, height: 48 },
+    computed: {
+      display: 'block',
+      paddingTop: '8px',
+      paddingRight: '42px',
+      paddingBottom: '8px',
+      paddingLeft: '16px',
+      fontFamily: 'DM Sans',
+      fontSize: '18px',
+      color: 'rgb(220, 227, 240)',
+      backgroundColor: 'rgb(8, 11, 18)',
+      borderWidth: '1px',
+      borderStyle: 'solid',
+      borderColor: 'rgb(37, 42, 58)',
+    },
+    formControl: {
+      type: 'select',
+      value: 'Semua Cara',
+      hasChevron: true,
+    },
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 360, height: 120 },
+    children: [select],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtSelect = tree.children[0];
+
+  expect(builtSelect.name).toBe('select.filter');
+  expect(builtSelect.layoutMode).toBe('HORIZONTAL');
+  expect(builtSelect.primaryAxisAlignItems).toBe('SPACE_BETWEEN');
+  expect(builtSelect.counterAxisAlignItems).toBe('CENTER');
+  expect(builtSelect.children).toHaveLength(2);
+  expect(builtSelect.children[0].name).toBe('select.filter / value');
+  expect(builtSelect.children[0].characters).toBe('Semua Cara');
+  expect(builtSelect.children[1].name).toBe('select.filter / chevron');
+  expect(builtSelect.children[1].type).toBe('SVG');
+});
+
 test('maps centered flex text containers to centered Figma text alignment', () => {
   const accent = textContainerNode({
     classList: ['work-accent'],

@@ -212,6 +212,38 @@ test('captures form control placeholders and placeholder styles', async () => {
   expect(input.formControl.placeholderComputed.fontSize).toBe('16px');
 }, 30000);
 
+test('captures native select controls as the selected label only', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      select {
+        width: 220px;
+        height: 48px;
+        padding: 8px 32px 8px 16px;
+        color: rgb(220, 227, 240);
+      }
+    </style>
+    <select class="filter">
+      <option>Semua Cara</option>
+      <option selected>Penyedia</option>
+      <option>Swakelola</option>
+    </select>
+  `, {
+    width: 320,
+    height: 120,
+  });
+
+  const select = find(domTree, (node) => node.classList?.includes('filter'));
+
+  expect(select).toBeTruthy();
+  expect(select.text).toBeNull();
+  expect(select.children).toHaveLength(0);
+  expect(select.formControl).toEqual(expect.objectContaining({
+    type: 'select',
+    value: 'Penyedia',
+    hasChevron: true,
+  }));
+}, 30000);
+
 test('skips pseudo-elements collapsed in the default state', async () => {
   const { domTree } = await extractFromHtml(`
     <style>
