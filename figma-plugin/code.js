@@ -4,7 +4,7 @@
  */
 
 const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
-// Set DEFAULT_CONVERTER_URL to your deployed Morphus converter URL when publishing.
+// const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 
 figma.showUI(__html__, { width: 420, height: 450 });

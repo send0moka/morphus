@@ -260,6 +260,73 @@ test('marks flex children that fill the parent counter axis as fill sizing', () 
   expect(builtHeader.counterAxisSizingMode).toBe('FIXED');
 });
 
+test('represents flex auto margins as grouped space-between layout without class-specific positioning', () => {
+  const header = frameNode({
+    tag: 'header',
+    rect: { x: 0, y: 0, width: 1580, height: 52 },
+    computed: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '14px',
+      columnGap: '14px',
+      paddingLeft: '20px',
+      paddingRight: '20px',
+      backgroundColor: 'rgb(15, 18, 24)',
+      borderBottomWidth: '1px',
+      borderBottomStyle: 'solid',
+      borderBottomColor: 'rgb(35, 42, 54)',
+    },
+    children: [
+      frameNode({
+        tag: 'div',
+        classList: ['logo'],
+        rect: { x: 20, y: 13, width: 234, height: 26 },
+      }),
+      textContainerNode({
+        tag: 'span',
+        classList: ['logo-sub'],
+        text: 'Plugin extraction accuracy',
+        rect: { x: 274, y: 19, width: 139, height: 14 },
+        computed: {
+          marginLeft: '6px',
+        },
+      }),
+      frameNode({
+        tag: 'div',
+        classList: ['status'],
+        rect: { x: 1450, y: 14, width: 110, height: 24 },
+        computed: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          marginLeft: '1022px',
+        },
+      }),
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1580, height: 900 },
+    children: [header],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtHeader = tree.children[0];
+  const leftGroup = builtHeader.children[0];
+  const status = builtHeader.children[1];
+
+  expect(builtHeader.layoutMode).toBe('HORIZONTAL');
+  expect(builtHeader.primaryAxisAlignItems).toBe('SPACE_BETWEEN');
+  expect(builtHeader.primaryAxisSizingMode).toBe('FIXED');
+  expect(builtHeader.itemSpacing).toBe(0);
+  expect(builtHeader.children).toHaveLength(2);
+  expect(leftGroup.name).toBe('header / left');
+  expect(leftGroup.layoutMode).toBe('HORIZONTAL');
+  expect(leftGroup.itemSpacing).toBe(20);
+  expect(leftGroup.children.map((child) => child.name)).toEqual(['div.logo', 'span.logo-sub']);
+  expect(status.name).toBe('div.status');
+});
+
 test('left-aligns a single text item in a transparent flex row without class-specific rules', () => {
   const title = textContainerNode({
     tag: 'h3',

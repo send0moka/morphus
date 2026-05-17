@@ -9,10 +9,12 @@
   "permissions": ["currentuser"],
   "networkAccess": {
     "allowedDomains": [
+      "https://jehian-tempelhtml.hf.space",
       "https://figmaeval.vercel.app"
     ],
     "devAllowedDomains": [
       "http://localhost:3210",
+      "https://jehian-tempelhtml.hf.space",
       "https://figmaeval.vercel.app"
     ]
   }

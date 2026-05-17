@@ -122,6 +122,7 @@ function buildNode(node, parentContext, ctx, path) {
     : isInlineBlock
       ? getRenderableInlineLayout(node)
       : null;
+  const flexAutoMarginLayout = isFlex ? getFlexAutoMarginLayoutOverride(node, layout) : null;
 
   // Check if a grid strategy was provided for this element
   const gridClass = classList?.find(c => ctx.gridStrategies?.[`.${c}`]);
@@ -160,6 +161,7 @@ function buildNode(node, parentContext, ctx, path) {
     effects: mapBoxShadow(computed),
     opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
     ...(layout || {}),
+    ...(flexAutoMarginLayout || {}),
     ...(computed.mixBlendMode && computed.mixBlendMode !== 'normal' ? {
       blendMode: computed.mixBlendMode.toUpperCase().replace(/-/g, '_'),
     } : {}),
@@ -218,20 +220,24 @@ function buildNode(node, parentContext, ctx, path) {
     .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudoTop.${index}`, ctx))
     .filter(Boolean);
 
-  frameNode.children = pseudoBefore
-    .concat(childNodes)
-    .concat(
-      getOrderedChildren(children)
-        .map((child, index) => buildNode(child, {
+  const orderedChildren = getOrderedChildren(children);
+  const builtChildPairs = orderedChildren
+    .map((child, index) => ({
+      source: child,
+      built: buildNode(child, {
           sourceRect: rect,
           resolvedRect,
           sourceNode: node,
           textTruncationContext: childTextTruncationContext,
           tableCellAutoWidth: usesTableCellAutoWidth,
           surfaceFills: nextSurfaceFills,
-        }, ctx, `${path}.${index}`))
-        .filter(Boolean)
-    )
+        }, ctx, `${path}.${index}`),
+    }))
+    .filter((pair) => Boolean(pair.built));
+
+  frameNode.children = pseudoBefore
+    .concat(childNodes)
+    .concat(withFlexAutoMarginGroups(node, builtChildPairs, layout, path))
     .concat(pseudoTop);
 
   if (mergeablePseudoBackgrounds.length > 0) {
@@ -1055,6 +1061,210 @@ function getRenderableFlexLayout(node) {
   };
 }
 
+function getFlexAutoMarginLayoutOverride(node, layout) {
+  const autoMargin = getDominantFlexAutoMargin(node, layout);
+  if (!autoMargin) {
+    return null;
+  }
+
+  return {
+    primaryAxisAlignItems: 'SPACE_BETWEEN',
+    itemSpacing: 0,
+    primaryAxisSizingMode: 'FIXED',
+  };
+}
+
+function withFlexAutoMarginGroups(parentNode, childPairs, layout, path) {
+  if (!isFlexDisplay(parentNode?.computed?.display) || !Array.isArray(childPairs) || childPairs.length === 0) {
+    return childPairs.map((pair) => pair.built);
+  }
+
+  const autoMargin = getDominantFlexAutoMargin(parentNode, layout);
+  if (!autoMargin) {
+    return childPairs.map((pair) => pair.built);
+  }
+
+  const splitIndex = childPairs.findIndex((pair) => pair.source === autoMargin.child);
+  if (splitIndex < 0) {
+    return childPairs.map((pair) => pair.built);
+  }
+
+  if (autoMargin.edge === 'start') {
+    const before = childPairs.slice(0, splitIndex);
+    const after = childPairs.slice(splitIndex);
+    return compactFlexAutoMarginGroups(parentNode, before, after, autoMargin.axis, path);
+  }
+
+  const before = childPairs.slice(0, splitIndex + 1);
+  const after = childPairs.slice(splitIndex + 1);
+  return compactFlexAutoMarginGroups(parentNode, before, after, autoMargin.axis, path);
+}
+
+function compactFlexAutoMarginGroups(parentNode, beforePairs, afterPairs, axis, path) {
+  const result = [];
+  const beforeGroup = buildFlexAutoMarginGroup(parentNode, beforePairs, axis, `${path}.autoMargin.before`, 'start');
+  const afterGroup = buildFlexAutoMarginGroup(parentNode, afterPairs, axis, `${path}.autoMargin.after`, 'end');
+
+  if (beforeGroup) {
+    result.push(beforeGroup);
+  }
+  if (afterGroup) {
+    result.push(afterGroup);
+  }
+
+  return result.length > 0 ? result : beforePairs.concat(afterPairs).map((pair) => pair.built);
+}
+
+function buildFlexAutoMarginGroup(parentNode, pairs, axis, path, side) {
+  const visiblePairs = (pairs || []).filter((pair) => pair?.built);
+  if (visiblePairs.length === 0) {
+    return null;
+  }
+
+  if (visiblePairs.length === 1) {
+    return visiblePairs[0].built;
+  }
+
+  const groupRect = unionRects(visiblePairs.map((pair) => specToRect(pair.built)).filter(Boolean));
+  const children = visiblePairs.map((pair) => rebaseSpecToGroup(pair.built, groupRect));
+  const itemSpacing = measureSpecAxisSpacing(visiblePairs.map((pair) => pair.built), axis);
+  const parentCounterAlign = mapFlexLayout(parentNode?.computed || {}).counterAxisAlignItems || 'MIN';
+  const sideName = axis === 'HORIZONTAL'
+    ? side === 'start' ? 'left' : 'right'
+    : side === 'start' ? 'top' : 'bottom';
+  const parentName = buildName(parentNode?.tag || 'div', parentNode?.classList || []);
+
+  return {
+    id: `flex-auto-margin-group-${path}`,
+    name: `${parentName} / ${sideName}`,
+    type: 'FRAME',
+    x: Math.round(groupRect.x),
+    y: Math.round(groupRect.y),
+    width: Math.round(groupRect.width),
+    height: Math.round(groupRect.height),
+    fills: [],
+    strokes: [],
+    effects: [],
+    opacity: 1,
+    paddingTop: 0,
+    paddingRight: 0,
+    paddingBottom: 0,
+    paddingLeft: 0,
+    layoutMode: axis,
+    primaryAxisAlignItems: 'MIN',
+    counterAxisAlignItems: parentCounterAlign,
+    itemSpacing,
+    primaryAxisSizingMode: 'FIXED',
+    counterAxisSizingMode: 'FIXED',
+    children,
+    _isLayoutGroup: true,
+  };
+}
+
+function getDominantFlexAutoMargin(parentNode, layout) {
+  if (!isFlexDisplay(parentNode?.computed?.display)) {
+    return null;
+  }
+
+  const children = getFlowChildren(parentNode);
+  if (children.length < 2) {
+    return null;
+  }
+
+  const axis = isRowFlexDirection(parentNode.computed.flexDirection) ? 'HORIZONTAL' : 'VERTICAL';
+  const freeSpace = measureFlexFreeSpaceBySum(parentNode, children, axis, layout?.itemSpacing || 0);
+  if (freeSpace <= 8) {
+    return null;
+  }
+
+  let best = null;
+  for (let index = 0; index < children.length; index++) {
+    for (const edge of ['start', 'end']) {
+      const margin = getMainAxisMargin(children[index].computed, parentNode.computed, axis, edge);
+      const dominantThreshold = Math.max(16, freeSpace * 0.45);
+      if (margin < dominantThreshold) {
+        continue;
+      }
+
+      if (!best || margin > best.margin) {
+        best = { child: children[index], edge, axis, margin };
+      }
+    }
+  }
+
+  return best;
+}
+
+function getMainAxisMargin(childComputed = {}, parentComputed = {}, axis, edge) {
+  const direction = String(parentComputed?.flexDirection || 'row').toLowerCase();
+  if (axis === 'HORIZONTAL') {
+    const useRight = direction === 'row-reverse';
+    const prop = edge === 'start'
+      ? useRight ? 'marginRight' : 'marginLeft'
+      : useRight ? 'marginLeft' : 'marginRight';
+    return parsePx(childComputed?.[prop]);
+  }
+
+  const useBottom = direction === 'column-reverse';
+  const prop = edge === 'start'
+    ? useBottom ? 'marginBottom' : 'marginTop'
+    : useBottom ? 'marginTop' : 'marginBottom';
+  return parsePx(childComputed?.[prop]);
+}
+
+function specToRect(spec) {
+  if (!spec) {
+    return null;
+  }
+
+  return {
+    x: Number.isFinite(spec.x) ? spec.x : 0,
+    y: Number.isFinite(spec.y) ? spec.y : 0,
+    width: Number.isFinite(spec.width) ? spec.width : 0,
+    height: Number.isFinite(spec.height) ? spec.height : 0,
+  };
+}
+
+function rebaseSpecToGroup(spec, groupRect) {
+  return {
+    ...spec,
+    x: Math.round((Number.isFinite(spec.x) ? spec.x : 0) - groupRect.x),
+    y: Math.round((Number.isFinite(spec.y) ? spec.y : 0) - groupRect.y),
+  };
+}
+
+function measureSpecAxisSpacing(specs, axis) {
+  const gaps = measureSpecAxisGaps(specs, axis);
+  let minGap = null;
+  for (let index = 0; index < gaps.length; index++) {
+    if (minGap === null || gaps[index] < minGap) {
+      minGap = gaps[index];
+    }
+  }
+
+  return Math.max(Math.round(minGap ?? 0), 0);
+}
+
+function measureSpecAxisGaps(specs, axis) {
+  const items = [...(specs || [])]
+    .filter((spec) => spec && Number.isFinite(spec.x) && Number.isFinite(spec.y))
+    .sort((a, b) => axis === 'HORIZONTAL' ? a.x - b.x : a.y - b.y);
+
+  const gaps = [];
+  for (let index = 1; index < items.length; index++) {
+    const prev = specToRect(items[index - 1]);
+    const current = specToRect(items[index]);
+    const gap = axis === 'HORIZONTAL'
+      ? current.x - (prev.x + prev.width)
+      : current.y - (prev.y + prev.height);
+    if (gap >= 0) {
+      gaps.push(gap);
+    }
+  }
+
+  return gaps;
+}
+
 function withFlexSizing(node, flowChildren, layout) {
   const axis = isRowFlexDirection(node.computed.flexDirection) ? 'HORIZONTAL' : 'VERTICAL';
   const result = { ...layout };
@@ -1072,6 +1282,25 @@ function withFlexSizing(node, flowChildren, layout) {
   }
 
   return result;
+}
+
+function measureFlexFreeSpaceBySum(node, children, axis, itemSpacing = 0) {
+  const rect = node?.rect;
+  if (!rect) {
+    return 0;
+  }
+
+  const computed = node.computed || {};
+  const renderedSize = axis === 'HORIZONTAL' ? rect.width : rect.height;
+  const startPadding = axis === 'HORIZONTAL' ? parsePx(computed.paddingLeft) : parsePx(computed.paddingTop);
+  const endPadding = axis === 'HORIZONTAL' ? parsePx(computed.paddingRight) : parsePx(computed.paddingBottom);
+  const items = (children || []).filter((child) => child?.rect);
+  const itemSize = items.reduce((total, child) => {
+    return total + (axis === 'HORIZONTAL' ? child.rect.width : child.rect.height);
+  }, 0);
+  const gaps = Math.max(items.length - 1, 0) * Math.max(itemSpacing || 0, 0);
+
+  return Math.max(renderedSize - startPadding - endPadding - itemSize - gaps, 0);
 }
 
 function measureFlexFreeSpace(node, children, axis) {
