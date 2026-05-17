@@ -3,8 +3,8 @@
  * Figma Plugin main thread - receives HTML or JSON and creates Figma nodes.
  */
 
-const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
-// const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
+// const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
+const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 
 figma.showUI(__html__, { width: 420, height: 450 });
