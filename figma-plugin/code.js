@@ -1999,6 +1999,16 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
     if (spec.primaryAxisAlignItems) frame.primaryAxisAlignItems = spec.primaryAxisAlignItems;
     if (spec.counterAxisAlignItems) frame.counterAxisAlignItems = spec.counterAxisAlignItems;
     if (spec.itemSpacing !== undefined) frame.itemSpacing = spec.itemSpacing;
+    if (spec.layoutWrap) {
+      try {
+        frame.layoutWrap = spec.layoutWrap;
+      } catch (err) {}
+    }
+    if (spec.counterAxisSpacing !== undefined) {
+      try {
+        frame.counterAxisSpacing = spec.counterAxisSpacing;
+      } catch (err) {}
+    }
   }
 
   if (spec._gridStrategy) {
@@ -2171,6 +2181,16 @@ function applyGridStrategy(frame, strategy) {
   }
   if (strategy.itemSpacing !== undefined) {
     frame.itemSpacing = strategy.itemSpacing;
+  }
+  if (strategy.layoutWrap) {
+    try {
+      frame.layoutWrap = strategy.layoutWrap;
+    } catch (err) {}
+  }
+  if (strategy.counterAxisSpacing !== undefined) {
+    try {
+      frame.counterAxisSpacing = strategy.counterAxisSpacing;
+    } catch (err) {}
   }
 }
 
@@ -2463,6 +2483,8 @@ function copyFramePresentationProps(source, target) {
   copyNodeProp(source, target, 'primaryAxisAlignItems');
   copyNodeProp(source, target, 'counterAxisAlignItems');
   copyNodeProp(source, target, 'itemSpacing');
+  copyNodeProp(source, target, 'layoutWrap');
+  copyNodeProp(source, target, 'counterAxisSpacing');
   copyNodeProp(source, target, 'primaryAxisSizingMode');
   copyNodeProp(source, target, 'counterAxisSizingMode');
   copyNodeProp(source, target, 'layoutSizingHorizontal');

@@ -37,9 +37,16 @@ function overflowClipsInlineContent(computed) {
   }
 
   return ['overflow', 'overflowX'].some((prop) => {
-    const value = String(computed[prop] || '').trim().toLowerCase();
-    return value.split(/\s+/).some((part) => part === 'hidden' || part === 'clip' || part === 'scroll' || part === 'auto');
+    return isClippingOverflowValue(computed[prop]);
   });
+}
+
+function isClippingOverflowValue(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .some((part) => part === 'hidden' || part === 'clip' || part === 'scroll' || part === 'auto');
 }
 
 function isSingleLineWhiteSpace(value) {
@@ -73,12 +80,22 @@ export function shouldTruncateText(computed = {}, parentComputed = null) {
  */
 export function mapFlexLayout(computed) {
   const isRow = computed.flexDirection !== 'column' && computed.flexDirection !== 'column-reverse';
-  return {
+  const columnGap = parsePx(computed.columnGap || computed.gap);
+  const rowGap = parsePx(computed.rowGap || computed.gap);
+  const wraps = computed.flexWrap === 'wrap' || computed.flexWrap === 'wrap-reverse';
+  const result = {
     layoutMode: isRow ? 'HORIZONTAL' : 'VERTICAL',
     primaryAxisAlignItems: JUSTIFY_MAP[computed.justifyContent] ?? 'MIN',
     counterAxisAlignItems: ALIGN_MAP[computed.alignItems] ?? 'MIN',
-    itemSpacing: parsePx(computed.gap || computed.columnGap || computed.rowGap),
+    itemSpacing: isRow ? columnGap : rowGap,
   };
+
+  if (wraps) {
+    result.layoutWrap = 'WRAP';
+    result.counterAxisSpacing = isRow ? rowGap : columnGap;
+  }
+
+  return result;
 }
 
 /**
@@ -98,7 +115,9 @@ export function mapPadding(computed) {
  */
 export function mapOverflow(computed) {
   return {
-    clipsContent: computed.overflow === 'hidden' || computed.overflowX === 'hidden' || computed.overflowY === 'hidden',
+    clipsContent: isClippingOverflowValue(computed.overflow)
+      || isClippingOverflowValue(computed.overflowX)
+      || isClippingOverflowValue(computed.overflowY),
   };
 }
 

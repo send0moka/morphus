@@ -607,6 +607,43 @@ test('applies child fill sizing from the snapshot', async () => {
   expect(header.primaryAxisSizingMode).toBe('FIXED');
 });
 
+test('applies auto-layout wrap properties from the snapshot', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      frameSpec('div.toolbar', {
+        width: 702,
+        height: 119,
+        layoutMode: 'HORIZONTAL',
+        layoutWrap: 'WRAP',
+        itemSpacing: 12,
+        counterAxisSpacing: 16,
+        primaryAxisSizingMode: 'FIXED',
+        counterAxisSizingMode: 'FIXED',
+      }),
+    ],
+  });
+
+  const toolbar = page.children[0];
+  expect(toolbar.layoutWrap).toBe('WRAP');
+  expect(toolbar.itemSpacing).toBe(12);
+  expect(toolbar.counterAxisSpacing).toBe(16);
+  expect(toolbar.primaryAxisSizingMode).toBe('FIXED');
+  expect(toolbar.counterAxisSizingMode).toBe('FIXED');
+});
+
 test('creates local styles only for reusable values and prunes stale generated styles', async () => {
   const { figma, paintStyles, textStyles } = createFigmaMock();
   paintStyles.push(

@@ -434,6 +434,47 @@ test('keeps multi-item transparent flex rows centered and stretchable', () => {
   expect(builtTitle.layoutSizingHorizontal).toBe('FILL');
 });
 
+test('maps wrapped flex rows to Figma auto-layout wrap without class-specific rules', () => {
+  const toolbar = frameNode({
+    tag: 'div',
+    classList: ['toolbar'],
+    rect: { x: 0, y: 0, width: 702, height: 119 },
+    computed: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: '16px 12px',
+      rowGap: '16px',
+      columnGap: '12px',
+      paddingTop: '20px',
+      paddingRight: '16px',
+      paddingBottom: '16px',
+      paddingLeft: '20px',
+    },
+    children: [
+      frameNode({ tag: 'input', rect: { x: 20, y: 20, width: 306, height: 49 } }),
+      frameNode({ tag: 'select', rect: { x: 338, y: 20, width: 140, height: 49 } }),
+      frameNode({ tag: 'select', rect: { x: 490, y: 20, width: 196, height: 49 } }),
+      frameNode({ tag: 'select', rect: { x: 20, y: 85, width: 150, height: 49 } }),
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 702, height: 160 },
+    children: [toolbar],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtToolbar = tree.children[0];
+
+  expect(builtToolbar.layoutMode).toBe('HORIZONTAL');
+  expect(builtToolbar.layoutWrap).toBe('WRAP');
+  expect(builtToolbar.itemSpacing).toBe(12);
+  expect(builtToolbar.counterAxisSpacing).toBe(16);
+  expect(builtToolbar.primaryAxisSizingMode).toBe('FIXED');
+  expect(builtToolbar.counterAxisSizingMode).toBe('FIXED');
+});
+
 test('maps base64 img sources to image nodes', () => {
   const img = frameNode({
     tag: 'img',
@@ -1073,6 +1114,38 @@ test('maps table-cell text to auto-width single-line text', () => {
   expect(builtLabel.width).toBe(720);
   expect(builtLabel.textTruncation).toBeUndefined();
   expect(builtLabel.whiteSpace).toBe('nowrap');
+});
+
+test('clips scrollable overflow containers without class-specific rules', () => {
+  const table = frameNode({
+    tag: 'table',
+    rect: { x: 0, y: 0, width: 960, height: 300 },
+    computed: {
+      display: 'table',
+    },
+  });
+  const wrapper = frameNode({
+    tag: 'div',
+    classList: ['data-panel'],
+    rect: { x: 0, y: 0, width: 640, height: 300 },
+    computed: {
+      overflow: 'auto',
+      overflowX: 'auto',
+      overflowY: 'hidden',
+    },
+    children: [table],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 640, height: 300 },
+    children: [wrapper],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtWrapper = tree.children[0];
+
+  expect(builtWrapper.name).toBe('div.data-panel');
+  expect(builtWrapper.clipsContent).toBe(true);
 });
 
 test('uses parent surface fill for transparent pagination controls', () => {

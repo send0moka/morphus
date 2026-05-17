@@ -1344,12 +1344,13 @@ function withFlexSizing(node, flowChildren, layout) {
   const counterFreeSpace = measureFlexFreeSpace(node, flowChildren, axis === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL');
   const primaryAlign = String(result.primaryAxisAlignItems || 'MIN').toUpperCase();
   const counterAlign = String(result.counterAxisAlignItems || 'MIN').toUpperCase();
+  const wraps = result.layoutWrap === 'WRAP';
 
-  if (primaryFreeSpace > 2 || primaryAlign === 'CENTER' || primaryAlign === 'MAX' || primaryAlign === 'SPACE_BETWEEN') {
+  if (wraps || primaryFreeSpace > 2 || primaryAlign === 'CENTER' || primaryAlign === 'MAX' || primaryAlign === 'SPACE_BETWEEN') {
     result.primaryAxisSizingMode = 'FIXED';
   }
 
-  if (counterFreeSpace > 2 || counterAlign === 'CENTER' || counterAlign === 'MAX' || counterAlign === 'STRETCH') {
+  if (wraps || counterFreeSpace > 2 || counterAlign === 'CENTER' || counterAlign === 'MAX' || counterAlign === 'STRETCH') {
     result.counterAxisSizingMode = 'FIXED';
   }
 
