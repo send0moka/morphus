@@ -476,6 +476,7 @@ function walkDOMInBrowser() {
     const formControl = extractFormControlData(el, tag, cs);
     const nodeText = formControl ? null : rawText;
     const textData = nodeText ? extractTextData(el) : null;
+    const renderedText = textData?.text || nodeText;
     const svgMarkup = isSvg ? serializeSvgElement(el, rect) : null;
     const imageData = isImage
       ? extractImageData(el)
@@ -493,7 +494,7 @@ function walkDOMInBrowser() {
       tag,
       id: el.id || null,
       classList: Array.from(el.classList),
-      text: nodeText || null,
+      text: renderedText || null,
       textRuns: textData?.runs || [],
       isTextContainer,
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
@@ -1171,15 +1172,22 @@ function walkDOMInBrowser() {
     const pieces = [];
     let lineIndex = 0;
 
-    function pushText(text, styleEl) {
+    function pushText(text, styleSource) {
       const normalized = normalizeTextFragment(text);
       if (!normalized) return;
       pieces.push(normalized);
       runs.push({
         text: normalized,
         lineIndex,
-        computed: extractTextRunStyles(window.getComputedStyle(styleEl)),
+        computed: extractTextRunStyles(resolveTextRunComputedStyles(styleSource)),
       });
+    }
+
+    function pushPseudoText(element, pseudoType) {
+      const pseudoStyles = window.getComputedStyle(element, pseudoType);
+      const content = parseCssContent(pseudoStyles.content);
+      if (!content) return;
+      pushText(content, pseudoStyles);
     }
 
     function walkText(node, styleEl) {
@@ -1200,9 +1208,11 @@ function walkDOMInBrowser() {
       }
 
       const nextStyleEl = element;
+      pushPseudoText(element, '::before');
       for (const child of element.childNodes) {
         walkText(child, nextStyleEl);
       }
+      pushPseudoText(element, '::after');
     }
 
     for (const child of el.childNodes) {
@@ -1216,6 +1226,14 @@ function walkDOMInBrowser() {
       .trim();
 
     return { text, runs };
+  }
+
+  function resolveTextRunComputedStyles(styleSource) {
+    if (styleSource && typeof styleSource.getPropertyValue === 'function') {
+      return styleSource;
+    }
+
+    return window.getComputedStyle(styleSource);
   }
 
   function extractTextRunStyles(cs) {

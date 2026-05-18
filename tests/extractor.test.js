@@ -231,6 +231,31 @@ test('splits wrapped inline text into separate line fragments', async () => {
   expect(Math.max(...italic.children.map((child) => child.rect.width))).toBeLessThan(italic.rect.width);
 }, 30000);
 
+test('includes generated inline pseudo text when collapsing phrasing content', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; font-family: Georgia, serif; }
+      p { width: 360px; font-size: 20px; line-height: 32px; color: rgb(153, 153, 153); }
+      q::before { content: "«"; color: rgb(200, 255, 0); }
+      q::after { content: " »"; color: rgb(200, 255, 0); }
+    </style>
+    <p class="quote-line">Standar berkata <q>kutipan inline</q>.</p>
+  `, {
+    width: 420,
+    height: 120,
+  });
+
+  const line = find(domTree, (node) => node.classList?.includes('quote-line'));
+
+  expect(line).toBeTruthy();
+  expect(line.isTextContainer).toBe(true);
+  expect(line.children).toHaveLength(0);
+  expect(line.text).toBe('Standar berkata «kutipan inline ».');
+
+  const quoteRuns = line.textRuns.filter((run) => run.computed.color === 'rgb(200, 255, 0)');
+  expect(quoteRuns.map((run) => run.text)).toEqual(['«', ' »']);
+}, 30000);
+
 test('clips paginated table rows after the pager so the table height stays bounded', async () => {
   const { domTree } = await extractFromHtml(`
     <style>

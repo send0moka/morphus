@@ -52,6 +52,25 @@ function makeNode(type) {
       this.rangeTextDecorationThicknesses = this.rangeTextDecorationThicknesses || [];
       this.rangeTextDecorationThicknesses.push({ start, end, value });
     },
+    async setTextStyleIdAsync(styleId) {
+      this.textStyleId = styleId;
+      this.textDecoration = 'NONE';
+      this.textDecorationStyle = undefined;
+      this.textDecorationColor = undefined;
+      this.textDecorationThickness = undefined;
+      this.rangeTextDecorations = [];
+      this.rangeTextDecorationStyles = [];
+      this.rangeTextDecorationColors = [];
+      this.rangeTextDecorationThicknesses = [];
+    },
+    async setRangeTextStyleIdAsync(start, end, styleId) {
+      this.rangeTextStyleIds = this.rangeTextStyleIds || [];
+      this.rangeTextStyleIds.push({ start, end, styleId });
+      this.rangeTextDecorations = [];
+      this.rangeTextDecorationStyles = [];
+      this.rangeTextDecorationColors = [];
+      this.rangeTextDecorationThicknesses = [];
+    },
   };
 }
 
@@ -1164,6 +1183,54 @@ test('applies dotted underline decoration to mixed text ranges', async () => {
       },
     },
   }]);
+});
+
+test('keeps full text underline after local text styles are applied', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('u', {
+        width: 180,
+        height: 28,
+        characters: 'bergaris bawah (u)',
+        fontName: { family: 'Courier New', style: 'Regular' },
+        fontSize: 16,
+        lineHeight: { unit: 'PIXELS', value: 27.2 },
+        fills: [{ type: 'SOLID', color: { r: 0.8, g: 0.8, b: 0.8 }, opacity: 1 }],
+        textDecoration: 'UNDERLINE',
+        textDecorationStyle: 'SOLID',
+      }),
+      textSpec('u.copy', {
+        y: 32,
+        width: 180,
+        height: 28,
+        characters: 'garis bawah lain',
+        fontName: { family: 'Courier New', style: 'Regular' },
+        fontSize: 16,
+        lineHeight: { unit: 'PIXELS', value: 27.2 },
+        fills: [{ type: 'SOLID', color: { r: 0.8, g: 0.8, b: 0.8 }, opacity: 1 }],
+        textDecoration: 'UNDERLINE',
+        textDecorationStyle: 'SOLID',
+      }),
+    ],
+  });
+
+  const text = page.children[0];
+  expect(text.textStyleId).toBeTruthy();
+  expect(text.textDecoration).toBe('UNDERLINE');
+  expect(text.textDecorationStyle).toBe('SOLID');
 });
 
 test('extends page-layout height when fixed header content is offset down', async () => {

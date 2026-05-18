@@ -1697,6 +1697,7 @@ async function buildTextNode(spec, parentLayoutMode, styleRegistry) {
   applyBaseTextProps(text, spec);
   applyTextRunStyles(text, textRuns);
   await applyTextStyleIds(text, spec, textRuns, styleRegistry);
+  applyTextDecorations(text, spec, textRuns);
   applyTextSizing(text, spec, parentLayoutMode);
   applyChildLayoutSizing(text, spec);
   return text;
@@ -1718,6 +1719,7 @@ async function buildMixedTextGroup(spec, styleRegistry) {
   applyBaseTextProps(baseText, Object.assign({}, spec, { x: 0, y: 0 }));
   applyTextRunStyles(baseText, textRuns);
   await applyTextStyleIds(baseText, Object.assign({}, spec, { x: 0, y: 0 }), textRuns, styleRegistry);
+  applyTextDecorations(baseText, spec, textRuns);
   applyTextSizing(baseText, Object.assign({}, spec, { x: 0, y: 0 }));
   frame.appendChild(baseText);
 
@@ -1827,7 +1829,6 @@ function applyTextRunStyles(text, runs) {
     if (run.textCase) {
       try { text.setRangeTextCase(start, end, run.textCase); } catch (err) {}
     }
-    applyRangeTextDecorationProps(text, start, end, run);
   }
 }
 
@@ -1844,6 +1845,18 @@ function applyTextDecorationProps(text, spec) {
   }
   if (spec.textDecorationThickness) {
     try { text.textDecorationThickness = spec.textDecorationThickness; } catch (err) {}
+  }
+}
+
+function applyTextDecorations(text, spec, runs) {
+  applyTextDecorationProps(text, spec);
+
+  const textRuns = runs || [];
+  for (const run of textRuns) {
+    const start = Number.isFinite(run.start) ? run.start : 0;
+    const end = Number.isFinite(run.end) ? run.end : start + (run.text || '').length;
+    if (end <= start) continue;
+    applyRangeTextDecorationProps(text, start, end, run);
   }
 }
 
