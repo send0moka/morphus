@@ -2,10 +2,15 @@
 <html>
 <head>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
     :root {
       color-scheme: dark;
-      --bg: #000000;
-      --bg-top: #000000;
+      --bg: #0f1012;
+      --bg-top: #202021;
+      --bg-gradient: linear-gradient(to top right, #0f1012 0%, #202021 100%);
+      --file-button-bg: linear-gradient(to top, #282828 0%, #313132 100%);
+      --file-button-bg-hover: linear-gradient(to top, #303032 0%, #3a3a3b 100%);
       --panel: #1b1b1b;
       --field: #050505;
       --ink: #f4f4f4;
@@ -26,6 +31,9 @@
       color-scheme: light;
       --bg: #f4f4f4;
       --bg-top: #ffffff;
+      --bg-gradient: linear-gradient(to top right, var(--bg) 0%, var(--bg-top) 100%);
+      --file-button-bg: linear-gradient(to top, #ececec 0%, #ffffff 100%);
+      --file-button-bg-hover: linear-gradient(to top, #dedede 0%, #f4f4f4 100%);
       --panel: #ffffff;
       --field: #fafafa;
       --ink: #0a0a0a;
@@ -44,8 +52,11 @@
 
     [data-theme="dark"] {
       color-scheme: dark;
-      --bg: #000000;
-      --bg-top: #000000;
+      --bg: #0f1012;
+      --bg-top: #202021;
+      --bg-gradient: linear-gradient(to top right, #0f1012 0%, #202021 100%);
+      --file-button-bg: linear-gradient(to top, #282828 0%, #313132 100%);
+      --file-button-bg-hover: linear-gradient(to top, #303032 0%, #3a3a3b 100%);
       --panel: #1b1b1b;
       --field: #050505;
       --ink: #f4f4f4;
@@ -69,11 +80,10 @@
     }
 
     body {
-      font-family: Inter, system-ui, sans-serif;
+      font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
       font-size: 13px;
       color: var(--ink);
-      background:
-        linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 100%);
+      background: var(--bg-gradient);
       padding: 8px 10px 0;
       overflow: hidden;
     }
@@ -111,7 +121,7 @@
       line-height: 1.2;
       margin-bottom: 2px;
       letter-spacing: 0;
-      color: var(--accent);
+      color: var(--ink);
     }
 
     .brand p {
@@ -138,7 +148,7 @@
       padding: 0 9px;
       border-radius: 8px;
       border: 1px solid var(--line);
-      background: var(--bg);
+      background: var(--file-button-bg);
       color: var(--ink);
       font-size: 11px;
       font-weight: 600;
@@ -147,8 +157,8 @@
     }
 
     .icon-btn:hover {
-      border-color: var(--accent);
-      background: var(--surface-hover);
+      border-color: var(--line-strong);
+      background: var(--file-button-bg-hover);
       color: var(--ink);
     }
 
@@ -167,7 +177,8 @@
       box-shadow: 0 10px 24px var(--shadow);
     }
 
-    .field label,
+    .field > label,
+    .field-title,
     .viewport-head {
       display: flex;
       align-items: center;
@@ -181,8 +192,7 @@
 
     .field input[type="text"],
     .field input[type="number"],
-    .field textarea,
-    .field input[type="file"] {
+    .field textarea {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -191,6 +201,59 @@
       padding: 7px 9px;
       appearance: none;
       -webkit-appearance: none;
+    }
+
+    .file-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .file-control {
+      width: 100%;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .file-control:focus-within {
+      border-color: var(--accent);
+    }
+
+    .file-picker {
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--file-button-bg);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .file-picker:hover,
+    .file-picker:focus-visible {
+      border-color: var(--line-strong);
+      background: var(--file-button-bg-hover);
+      outline: none;
+    }
+
+    .file-picker svg {
+      flex-shrink: 0;
     }
 
     .field textarea {
@@ -204,11 +267,11 @@
     }
 
     .file-meta {
-      margin-top: 2px;
+      flex: 1;
+      min-width: 0;
       font-size: 11px;
       line-height: 1.2;
       color: var(--muted);
-      min-height: 13px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -351,9 +414,20 @@
 
     <div class="panel">
       <div class="field">
-        <label for="fileInput">HTML file</label>
-        <input id="fileInput" type="file" accept=".html,.htm,text/html" />
-        <div id="fileMeta" class="file-meta">No file selected.</div>
+        <div class="field-title">HTML file</div>
+        <div class="file-control">
+          <button id="filePickerBtn" class="file-picker" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+              <path d="M12 18v-6" />
+              <path d="m9 15 3 3 3-3" />
+            </svg>
+            <span>Choose File</span>
+          </button>
+          <input id="fileInput" class="file-input" type="file" accept=".html,.htm,text/html" />
+          <div id="fileMeta" class="file-meta">No file selected.</div>
+        </div>
       </div>
 
       <div class="field">
@@ -412,6 +486,7 @@
     };
     const THEME_LABELS = { system: 'System', dark: 'Dark', light: 'Light' };
 
+    const filePickerBtn = document.getElementById('filePickerBtn');
     const fileInput = document.getElementById('fileInput');
     const htmlInput = document.getElementById('htmlInput');
     const widthInput = document.getElementById('widthInput');
@@ -465,6 +540,10 @@
       parent.postMessage({
         pluginMessage: { type: 'OPEN_BENCHMARK' },
       }, '*');
+    });
+
+    filePickerBtn.addEventListener('click', () => {
+      fileInput.click();
     });
 
     themeBtn.addEventListener('click', () => {

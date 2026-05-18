@@ -9,11 +9,15 @@
   "permissions": ["currentuser"],
   "networkAccess": {
     "allowedDomains": [
+      "https://fonts.googleapis.com",
+      "https://fonts.gstatic.com",
       "https://jehian-tempelhtml.hf.space",
       "https://figmaeval.vercel.app"
     ],
     "devAllowedDomains": [
       "http://localhost:3210",
+      "https://fonts.googleapis.com",
+      "https://fonts.gstatic.com",
       "https://jehian-tempelhtml.hf.space",
       "https://figmaeval.vercel.app"
     ]
