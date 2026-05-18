@@ -11,8 +11,8 @@
       --bg-gradient: linear-gradient(to top right, #0f1012 0%, #202021 100%);
       --file-button-bg: linear-gradient(to top, #282828 0%, #313132 100%);
       --file-button-bg-hover: linear-gradient(to top, #303032 0%, #3a3a3b 100%);
-      --panel: #1b1b1b;
-      --field: #050505;
+      --panel: linear-gradient(to top, #141516 0%, #19191a 100%);
+      --field: #101012;
       --ink: #f4f4f4;
       --muted: #a8a8a8;
       --line: #2a2a2a;
@@ -25,6 +25,8 @@
       --status-danger: #f70f0f;
       --status-success: #d6d6d6;
       --shadow: rgba(0, 0, 0, 0.35);
+      --chip-bg: #151618;
+      --chip-border: #323335;
     }
 
     [data-theme="light"] {
@@ -57,8 +59,8 @@
       --bg-gradient: linear-gradient(to top right, #0f1012 0%, #202021 100%);
       --file-button-bg: linear-gradient(to top, #282828 0%, #313132 100%);
       --file-button-bg-hover: linear-gradient(to top, #303032 0%, #3a3a3b 100%);
-      --panel: #1b1b1b;
-      --field: #050505;
+      --panel: linear-gradient(to top, #141516 0%, #19191a 100%);
+      --field: #101012;
       --ink: #f4f4f4;
       --muted: #a8a8a8;
       --line: #2a2a2a;
@@ -71,6 +73,8 @@
       --status-danger: #f70f0f;
       --status-success: #d6d6d6;
       --shadow: rgba(0, 0, 0, 0.35);
+      --chip-bg: #151618;
+      --chip-border: #323335;
     }
 
     * {
@@ -256,15 +260,88 @@
       flex-shrink: 0;
     }
 
-    .field textarea {
-      height: 92px;
-      min-height: 92px;
-      max-height: 92px;
-      resize: none;
+    .editor-wrapper {
+      display: flex;
+      height: 160px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      overflow: hidden;
+      position: relative;
+      transition: border-color 0.15s;
+    }
+
+    .editor-wrapper:focus-within {
+      border-color: var(--accent);
+    }
+
+    .editor-line-numbers {
+      padding: 8px 6px;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      color: var(--muted);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 11px;
       line-height: 1.45;
+      text-align: right;
+      user-select: none;
+      overflow: hidden;
+      min-width: 36px;
     }
+
+    .editor-content {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: var(--field);
+    }
+
+    .editor-content textarea,
+    .editor-content pre {
+      margin: 0;
+      padding: 8px 10px;
+      border: none;
+      width: 100%;
+      height: 100%;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      white-space: pre;
+      overflow: auto;
+      tab-size: 2;
+      background: transparent;
+      box-sizing: border-box;
+    }
+
+    .editor-content textarea {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 2;
+      color: transparent;
+      caret-color: var(--ink);
+      outline: none;
+      resize: none;
+    }
+
+    .editor-content pre {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      color: var(--ink);
+      pointer-events: none;
+    }
+
+    .hl-tag { color: #f07178; }
+    .hl-attr { color: #ffcb6b; }
+    .hl-string { color: #c3e88d; }
+    .hl-comment { color: #676e95; font-style: italic; }
+
+    [data-theme="light"] .hl-tag { color: #e53935; }
+    [data-theme="light"] .hl-attr { color: #f6a434; }
+    [data-theme="light"] .hl-string { color: #43a047; }
+    [data-theme="light"] .hl-comment { color: #a0a1a7; }
 
     .file-meta {
       flex: 1;
@@ -287,22 +364,20 @@
       flex-wrap: wrap;
       gap: 6px;
     }
-
-    .chip {
+    .chip {
       height: 26px;
       display: inline-flex;
       align-items: center;
       gap: 5px;
       padding: 0 9px;
       border-radius: 8px;
-      border: 1px solid var(--line);
-      background: var(--bg);
+      border: 1px solid var(--chip-border, var(--line));
+      background: var(--chip-bg, var(--bg));
       color: var(--ink);
       font-size: 11px;
       font-weight: 600;
       transition: border-color 0.15s, color 0.15s, background 0.15s;
     }
-
     .chip:hover {
       border-color: var(--accent);
       background: var(--surface-hover);
@@ -310,10 +385,11 @@
     }
 
     .chip.active {
-      background: var(--selected);
-      border-color: var(--line-strong);
+      background: linear-gradient(to top, #321e1e 0%, #412b2b 100%) padding-box,
+                  linear-gradient(to top, #de514a 0%, #d15e58 100%) border-box;
+      border: 1.5px solid transparent;
       color: var(--ink);
-      box-shadow: inset 0 -2px 0 var(--accent);
+      box-shadow: none;
     }
 
     .chip svg {
@@ -432,7 +508,13 @@
 
       <div class="field">
         <label for="htmlInput">HTML input</label>
-        <textarea id="htmlInput" placeholder="Paste raw HTML here..."></textarea>
+        <div class="editor-wrapper">
+          <div class="editor-line-numbers" id="lineNumbers"></div>
+          <div class="editor-content">
+            <textarea id="htmlInput" wrap="off" placeholder="Paste raw HTML here..." spellcheck="false"></textarea>
+            <pre aria-hidden="true"><code id="highlightCode"></code></pre>
+          </div>
+        </div>
       </div>
 
       <div class="viewport-block">
@@ -489,6 +571,8 @@
     const filePickerBtn = document.getElementById('filePickerBtn');
     const fileInput = document.getElementById('fileInput');
     const htmlInput = document.getElementById('htmlInput');
+    const highlightCode = document.getElementById('highlightCode');
+    const lineNumbers = document.getElementById('lineNumbers');
     const widthInput = document.getElementById('widthInput');
     const widthLabel = document.getElementById('widthLabel');
     const buildBtn = document.getElementById('buildBtn');
@@ -585,6 +669,43 @@
       setStatus('');
     });
 
+    htmlInput.addEventListener('scroll', () => {
+      highlightCode.parentElement.scrollTop = htmlInput.scrollTop;
+      highlightCode.parentElement.scrollLeft = htmlInput.scrollLeft;
+      lineNumbers.scrollTop = htmlInput.scrollTop;
+    });
+
+    htmlInput.addEventListener('input', () => {
+      updateEditor();
+    });
+
+    function updateEditor() {
+      const code = htmlInput.value;
+      let text = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      
+      text = text.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="hl-comment">$1</span>');
+      text = text.replace(/(&lt;\/?[a-zA-Z0-9\-]+)([\s\S]*?)(&gt;)/g, (match, p1, p2, p3) => {
+        let tagHtml = p1.replace(/(&lt;\/?)([a-zA-Z0-9\-]+)/, '$1<span class="hl-tag">$2</span>');
+        let attrHtml = p2.replace(/([a-zA-Z0-9\-:]+)(\s*=\s*("[^"]*"|'[^']*'))?/g, (match, attrName, eqAndValue, quoteValue) => {
+          let res = '<span class="hl-attr">' + attrName + '</span>';
+          if (eqAndValue) {
+            res += eqAndValue.replace(quoteValue, '<span class="hl-string">' + quoteValue + '</span>');
+          }
+          return res;
+        });
+        return tagHtml + attrHtml + p3;
+      });
+      
+      highlightCode.innerHTML = text + (code[code.length - 1] === '\n' ? ' ' : '');
+
+      const linesCount = code.split('\n').length || 1;
+      let numbersHtml = '';
+      for (let i = 1; i <= linesCount; i++) {
+        numbersHtml += i + '<br>';
+      }
+      lineNumbers.innerHTML = numbersHtml;
+    }
+
     widthInput.addEventListener('input', () => {
       const width = normalizeDimension(widthInput.value, PRESETS[state.currentPreset].width);
       state.viewportWidths[state.currentPreset] = width;
@@ -614,6 +735,7 @@
 
         state.selectedFile = file;
         htmlInput.value = text;
+        updateEditor();
         fileMeta.textContent = file.name;
         setStatus(`Loaded ${file.name}.`, 'success');
       } catch (error) {
@@ -693,6 +815,7 @@
     applyTheme(state.currentTheme);
     renderViewportControls();
     fileMeta.textContent = 'No file selected.';
+    updateEditor();
 
     function applyTheme(theme) {
       state.currentTheme = theme;

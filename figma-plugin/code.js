@@ -7,7 +7,7 @@ const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
 // const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 
-figma.showUI(__html__, { width: 420, height: 450 });
+figma.showUI(__html__, { width: 420, height: 490 });
 
 const DEFAULT_VIEWPORT = { name: 'desktop', label: 'Desktop', width: 1440, height: 900 };
 
