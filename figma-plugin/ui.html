@@ -27,6 +27,10 @@
       --shadow: rgba(0, 0, 0, 0.35);
       --chip-bg: #151618;
       --chip-border: #323335;
+      --chip-active-bg: linear-gradient(to top, #321e1e 0%, #412b2b 100%) padding-box, linear-gradient(to top, #de514a 0%, #d15e58 100%) border-box;
+      --chip-active-text: #ffffff;
+      --logo-bg: #1e1f21;
+      --logo-border: #383839;
     }
 
     [data-theme="light"] {
@@ -50,6 +54,12 @@
       --status-danger: #d80d0d;
       --status-success: #242424;
       --shadow: rgba(0, 0, 0, 0.08);
+      --chip-bg: #ffffff;
+      --chip-border: #d8d8d8;
+      --chip-active-bg: linear-gradient(to top, #fef2f2 0%, #ffffff 100%) padding-box, linear-gradient(to top, #f70f0f 0%, #d80d0d 100%) border-box;
+      --chip-active-text: #d80d0d;
+      --logo-bg: #ffffff;
+      --logo-border: #d8d8d8;
     }
 
     [data-theme="dark"] {
@@ -75,6 +85,10 @@
       --shadow: rgba(0, 0, 0, 0.35);
       --chip-bg: #151618;
       --chip-border: #323335;
+      --chip-active-bg: linear-gradient(to top, #321e1e 0%, #412b2b 100%) padding-box, linear-gradient(to top, #de514a 0%, #d15e58 100%) border-box;
+      --chip-active-text: #ffffff;
+      --logo-bg: #1e1f21;
+      --logo-border: #383839;
     }
 
     * {
@@ -118,8 +132,40 @@
     .brand {
       min-width: 0;
       flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--logo-bg);
+      border: 1px solid var(--logo-border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .brand-logo span {
+      background: linear-gradient(to top, #f73f3c 0%, #fd6a68 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -1.5px;
+      padding-right: 2px;
+    }
+
+    .brand-text {
+      min-width: 0;
+      flex: 1;
+    }
+
+    
     .brand h2 {
       font-size: 14px;
       line-height: 1.2;
@@ -337,6 +383,10 @@
     .hl-attr { color: #ffcb6b; }
     .hl-string { color: #c3e88d; }
     .hl-comment { color: #676e95; font-style: italic; }
+    .hl-keyword { color: #c792ea; }
+    .hl-css-prop { color: #82aaff; }
+    .hl-css-val { color: #f78c6c; }
+    .hl-css-sel { color: #ffcb6b; }
 
     [data-theme="light"] .hl-tag { color: #e53935; }
     [data-theme="light"] .hl-attr { color: #f6a434; }
@@ -371,8 +421,8 @@
       gap: 5px;
       padding: 0 9px;
       border-radius: 8px;
-      border: 1px solid var(--chip-border, var(--line));
-      background: var(--chip-bg, var(--bg));
+      border: 1px solid var(--chip-border);
+      background: var(--chip-bg);
       color: var(--ink);
       font-size: 11px;
       font-weight: 600;
@@ -385,10 +435,9 @@
     }
 
     .chip.active {
-      background: linear-gradient(to top, #321e1e 0%, #412b2b 100%) padding-box,
-                  linear-gradient(to top, #de514a 0%, #d15e58 100%) border-box;
+      background: var(--chip-active-bg);
       border: 1.5px solid transparent;
-      color: var(--ink);
+      color: var(--chip-active-text);
       box-shadow: none;
     }
 
@@ -414,13 +463,20 @@
       width: 100%;
       height: 34px;
       border-radius: 8px;
-      background: var(--accent);
+      background: linear-gradient(to top, #bd0e16 0%, #dd242a 100%) padding-box,
+                  linear-gradient(to top, #ea0c12 0%, #f15457 100%) border-box;
+      border: 1.5px solid transparent;
       color: var(--on-accent);
       font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
 
     .primary:hover {
-      background: var(--accent-strong);
+      background: linear-gradient(to top, #ab0d14 0%, #c82025 100%) padding-box,
+                  linear-gradient(to top, #d40a10 0%, #df4c4f 100%) border-box;
       color: var(--on-accent);
     }
 
@@ -467,8 +523,11 @@
   <div class="shell">
     <div class="top-bar">
       <div class="brand">
-        <h2>Morphus</h2>
-        <p>Paste HTML, build in Figma.</p>
+        <div class="brand-logo"><span>&lt;/&gt;</span></div>
+        <div class="brand-text">
+          <h2>Morphus</h2>
+          <p>Paste HTML, build in Figma.</p>
+        </div>
       </div>
       <div class="actions">
         <button id="benchmarkBtn" class="icon-btn" type="button" title="Open benchmark">
@@ -546,7 +605,10 @@
         </div>
       </div>
 
-      <button id="buildBtn" class="primary" type="button">Convert &amp; Build</button>
+      <button id="buildBtn" class="primary" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        Convert &amp; Build
+      </button>
       <div class="progress"><div id="progressFill"></div></div>
     </div>
 
@@ -683,6 +745,24 @@
       const code = htmlInput.value;
       let text = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       
+      text = text.replace(/(&lt;style[\s\S]*?&gt;)([\s\S]*?)(&lt;\/style&gt;)/gi, (match, open, content, close) => {
+        let css = content;
+        css = css.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="hl-comment">$1</span>');
+        css = css.replace(/([a-zA-Z\-]+)(?=\s*:)/g, '<span class="hl-css-prop">$1</span>');
+        css = css.replace(/\b(\d+(?:px|em|rem|%|vh|vw|ms|s)?)\b/g, '<span class="hl-css-val">$1</span>');
+        css = css.replace(/([.#][a-zA-Z0-9\-_]+)/g, '<span class="hl-css-sel">$1</span>');
+        return open + css + close;
+      });
+
+      text = text.replace(/(&lt;script[\s\S]*?&gt;)([\s\S]*?)(&lt;\/script&gt;)/gi, (match, open, content, close) => {
+        let js = content;
+        js = js.replace(/(\/\*[\s\S]*?\*\/|\/\/.*)/g, '<span class="hl-comment">$1</span>');
+        js = js.replace(/('[^']*'|"[^"]*"|`[^`]*`)/g, '<span class="hl-string">$1</span>');
+        const keywords = 'function const let var return if else for while do switch case break continue new class extends import export default true false null undefined await async document window console';
+        js = js.replace(new RegExp('\\b(' + keywords.split(' ').join('|') + ')\\b', 'g'), '<span class="hl-keyword">$1</span>');
+        return open + js + close;
+      });
+
       text = text.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="hl-comment">$1</span>');
       text = text.replace(/(&lt;\/?[a-zA-Z0-9\-]+)([\s\S]*?)(&gt;)/g, (match, p1, p2, p3) => {
         let tagHtml = p1.replace(/(&lt;\/?)([a-zA-Z0-9\-]+)/, '$1<span class="hl-tag">$2</span>');
@@ -863,9 +943,10 @@
       }
       widthInput.value = state.viewportWidths[state.currentPreset] || PRESETS[state.currentPreset].width;
       widthLabel.textContent = `${PRESET_LABELS[state.currentPreset]} width`;
-      buildBtn.textContent = state.selectedPresets.length > 1
-        ? `Convert & Build (${state.selectedPresets.length})`
-        : 'Convert & Build';
+      const svgIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>';
+      buildBtn.innerHTML = state.selectedPresets.length > 1
+        ? `${svgIcon} Convert &amp; Build (${state.selectedPresets.length})`
+        : `${svgIcon} Convert &amp; Build`;
     }
 
     function getSelectedViewports() {
