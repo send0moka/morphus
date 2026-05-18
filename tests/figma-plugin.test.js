@@ -684,7 +684,14 @@ test('creates local styles only for reusable values and prunes stale generated s
   paintStyles.push(
     {
       id: 'stale-paint',
-      name: 'Morphus / Color / Purple / 900 / OLD',
+      _name: 'Morphus / Color / Purple / 900 / OLD',
+      get name() {
+        if (this.removed) throw new Error('style was removed');
+        return this._name;
+      },
+      set name(value) {
+        this._name = value;
+      },
       paints: [],
       remove() {
         this.removed = true;
@@ -701,7 +708,14 @@ test('creates local styles only for reusable values and prunes stale generated s
   );
   textStyles.push({
     id: 'stale-text',
-    name: 'Morphus / Typography / Body / XS / Regular / OLD',
+    _name: 'Morphus / Typography / Body / XS / Regular / OLD',
+    get name() {
+      if (this.removed) throw new Error('style was removed');
+      return this._name;
+    },
+    set name(value) {
+      this._name = value;
+    },
     remove() {
       this.removed = true;
     },
@@ -1183,6 +1197,60 @@ test('applies dotted underline decoration to mixed text ranges', async () => {
       },
     },
   }]);
+});
+
+test('applies CSS glow effects to normal and outline text nodes', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  const glow = [{
+    type: 'DROP_SHADOW',
+    color: { r: 200 / 255, g: 1, b: 0, a: 1 },
+    offset: { x: 0, y: 0 },
+    radius: 20,
+    spread: 0,
+    visible: true,
+    blendMode: 'NORMAL',
+  }];
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('h1.hero-headline', {
+        width: 900,
+        height: 300,
+        characters: 'HTML\n& CSS\nMuseum',
+        fontName: { family: 'Inter', style: 'Bold' },
+        fontSize: 144,
+        effects: glow,
+        textRuns: [
+          {
+            text: '& CSS',
+            fontName: { family: 'Inter', style: 'Bold' },
+            fontSize: 144,
+            fills: [],
+            strokes: [{ type: 'SOLID', color: { r: 200 / 255, g: 1, b: 0 }, opacity: 1 }],
+            strokeWeight: 2,
+            effects: glow,
+          },
+        ],
+      }),
+    ],
+  });
+
+  const group = page.children[0];
+  expect(group.type).toBe('FRAME');
+  expect(group.children[0].effects).toEqual(glow);
+  expect(group.children[1].effects).toEqual(glow);
 });
 
 test('keeps full text underline after local text styles are applied', async () => {

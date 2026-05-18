@@ -62,6 +62,7 @@ function baseComputed(overrides = {}) {
     borderBottomStyle: 'none',
     borderLeftStyle: 'none',
     boxShadow: 'none',
+    filter: 'none',
     overflow: 'visible',
     overflowX: 'visible',
     overflowY: 'visible',
@@ -77,6 +78,7 @@ function baseComputed(overrides = {}) {
     textTransform: 'none',
     whiteSpace: 'normal',
     textOverflow: 'clip',
+    textShadow: 'none',
     textDecoration: 'none',
     webkitTextStrokeWidth: '0px',
     webkitTextStrokeColor: 'rgba(0, 0, 0, 0)',
@@ -722,7 +724,10 @@ test('does not use inherited pseudo text color as a background fallback', () => 
           height: '785px',
           color: 'rgb(204, 204, 204)',
           backgroundColor: 'rgba(0, 0, 0, 0)',
-          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(200, 255, 0, 0.03) 51px)',
+          backgroundImage: [
+            'repeating-linear-gradient(0deg, transparent, transparent 40px, rgba(200, 255, 0, 0.03) 40px, rgba(200, 255, 0, 0.03) 41px)',
+            'repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(200, 255, 0, 0.03) 40px, rgba(200, 255, 0, 0.03) 41px)',
+          ].join(', '),
         }),
       },
       after: null,
@@ -746,6 +751,15 @@ test('does not use inherited pseudo text color as a background fallback', () => 
     opacity: 1,
   });
   expect(builtHero.fills).toEqual([]);
+  expect(builtHero.children[0]._backgroundPattern).toEqual(expect.objectContaining({
+    kind: 'grid',
+    cellWidth: 41,
+    cellHeight: 41,
+    strokeWeight: 1,
+    verticalLines: true,
+    horizontalLines: true,
+  }));
+  expect(builtHero.children[0]._backgroundPattern.paint.opacity).toBeCloseTo(0.03);
 });
 
 test('preserves inline SVG markup as a single SVG node', () => {
@@ -851,6 +865,159 @@ test('maps inline text decoration runs to Figma text decoration properties', () 
         opacity: 1,
       },
     },
+  }));
+});
+
+test('maps CSS text glow from text-shadow and drop-shadow filter', () => {
+  const heading = textContainerNode({
+    tag: 'h1',
+    classList: ['hero-headline'],
+    text: 'HTML\n& CSS\nMuseum',
+    rect: { x: 0, y: 0, width: 900, height: 300 },
+    computed: baseComputed({
+      color: 'rgb(244, 241, 236)',
+      fontFamily: 'Unbounded',
+      fontSize: '144px',
+      fontWeight: '900',
+      lineHeight: '132px',
+    }),
+    textRuns: [
+      {
+        text: 'HTML',
+        lineIndex: 0,
+        computed: baseComputed({
+          color: 'rgb(244, 241, 236)',
+          fontFamily: 'Unbounded',
+          fontSize: '144px',
+          fontWeight: '900',
+        }),
+      },
+      {
+        text: '& CSS',
+        lineIndex: 1,
+        computed: baseComputed({
+          color: 'rgba(0, 0, 0, 0)',
+          fontFamily: 'Unbounded',
+          fontSize: '144px',
+          fontWeight: '900',
+          webkitTextStrokeWidth: '2px',
+          webkitTextStrokeColor: 'rgb(200, 255, 0)',
+          filter: 'drop-shadow(rgb(200, 255, 0) 0px 0px 20px)',
+        }),
+      },
+      {
+        text: 'Museum',
+        lineIndex: 2,
+        computed: baseComputed({
+          color: 'rgb(244, 241, 236)',
+          fontFamily: 'Unbounded',
+          fontSize: '144px',
+          fontWeight: '900',
+          textShadow: 'rgba(200, 255, 0, 0.4) 0px 0px 12px',
+        }),
+      },
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1000, height: 400 },
+    children: [heading],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const text = tree.children[0];
+
+  expect(text.textRuns[1]).toEqual(expect.objectContaining({
+    text: '& CSS',
+    strokeWeight: 2,
+    effects: [expect.objectContaining({
+      type: 'DROP_SHADOW',
+      radius: 20,
+      color: expect.objectContaining({ r: 200 / 255, g: 1, b: 0 }),
+    })],
+  }));
+  expect(text.textRuns[2].effects[0]).toEqual(expect.objectContaining({
+    radius: 12,
+    color: expect.objectContaining({ a: 0.4 }),
+  }));
+});
+
+test('maps CSS shadows with named colors, HSL/HSLA, and modern syntaxes', () => {
+  const heading = textContainerNode({
+    tag: 'h1',
+    classList: ['hero-headline'],
+    text: 'Test Shadows',
+    rect: { x: 0, y: 0, width: 900, height: 300 },
+    computed: baseComputed({
+      color: 'rgb(244, 241, 236)',
+      fontFamily: 'Unbounded',
+      fontSize: '144px',
+      fontWeight: '900',
+    }),
+    textRuns: [
+      {
+        text: 'Named Color',
+        lineIndex: 0,
+        computed: baseComputed({
+          color: 'rgb(244, 241, 236)',
+          fontFamily: 'Unbounded',
+          fontSize: '144px',
+          textShadow: 'lime 2px 5px 10px',
+        }),
+      },
+      {
+        text: 'HSL Color',
+        lineIndex: 1,
+        computed: baseComputed({
+          color: 'rgb(244, 241, 236)',
+          fontFamily: 'Unbounded',
+          fontSize: '144px',
+          filter: 'drop-shadow(hsl(120, 100%, 50%) 0px 0px 20px)',
+        }),
+      },
+      {
+        text: 'Plain Text',
+        lineIndex: 2,
+        computed: baseComputed({
+          color: 'rgb(244, 241, 236)',
+          fontFamily: 'Unbounded',
+          fontSize: '144px',
+        }),
+      },
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1000, height: 400 },
+    computed: baseComputed({
+      boxShadow: '0 0 30px 10px rgba(200 255 0 / 0.3)',
+    }),
+    children: [heading],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const text = tree.children[0];
+
+  // 1. Named color check (lime -> #00ff00)
+  expect(text.textRuns[0].effects[0]).toEqual(expect.objectContaining({
+    type: 'DROP_SHADOW',
+    radius: 10,
+    color: expect.objectContaining({ r: 0, g: 1, b: 0, a: 1 }),
+  }));
+
+  // 2. HSL color check (hsl(120, 100%, 50%) -> #00ff00)
+  expect(text.textRuns[1].effects[0]).toEqual(expect.objectContaining({
+    type: 'DROP_SHADOW',
+    radius: 20,
+    color: expect.objectContaining({ r: 0, g: 1, b: 0, a: 1 }),
+  }));
+
+  // 3. Modern space-separated RGBA syntax check (rgba(200 255 0 / 0.3))
+  expect(tree.effects[0]).toEqual(expect.objectContaining({
+    type: 'DROP_SHADOW',
+    radius: 30,
+    spread: 10,
+    color: expect.objectContaining({ r: 200 / 255, g: 1, b: 0, a: 0.3 }),
   }));
 });
 

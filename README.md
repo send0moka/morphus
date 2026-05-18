@@ -26,7 +26,7 @@ Then in Figma: open the Morphus plugin, paste or upload HTML, and click `Convert
 
 ## Commands
 ```bash
-npm run convert -- --input ./tests/vela/input.html --output ./out/vela.json
+npm run convert -- --input ./tests/landing-page/input.html --output ./out/landing-page.json
 npm run server
 npm test
 npm run snapshot:update
@@ -39,11 +39,11 @@ See [CHECKLIST.md](CHECKLIST.md) for the list of completed project items.
 To let other people use the plugin without running the local server, deploy the converter as a public HTTPS Node/Playwright service and update the plugin's converter URL. See [docs/deployment.md](docs/deployment.md).
 
 ## Snapshot Test
-`tests/vela/expected-snapshot.json` is the deterministic baseline for `tests/vela/input.html`.
+`tests/landing-page/expected-snapshot.json` is the deterministic baseline for `tests/landing-page/input.html`.
 
 ## Project Layout
 - `scripts/convert.js` CLI conversion
 - `scripts/server.js` local bridge for the plugin
 - `figma-plugin/` Figma UI and builder
 - `src/` Playwright extraction and Figma mapping code
-- `tests/vela/` fixture and snapshot
+- `tests/landing-page/` fixture and snapshot

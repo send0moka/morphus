@@ -247,7 +247,7 @@ function extractGradientStops(css) {
   ];
 }
 
-function splitCssLayers(css) {
+export function splitCssLayers(css) {
   const source = String(css || '');
   const layers = [];
   let current = '';
@@ -419,25 +419,108 @@ function normalizeCssValue(value) {
 export function mapBoxShadow(computed) {
   if (!computed.boxShadow || computed.boxShadow === 'none') return [];
 
-  const parts = computed.boxShadow.match(
-    /(?:(rgba?\([^)]+\)|#[0-9a-f]{3,8})\s+)?(-?[\d.]+px)\s+(-?[\d.]+px)\s+([\d.]+px)\s*([\d.]+px)?(?:\s+(rgba?\([^)]+\)|#[0-9a-f]{3,8}))?/i
-  );
-  if (!parts) return [];
+  return splitCssLayers(computed.boxShadow)
+    .map((layer) => parseShadowEffect(layer, true))
+    .filter(Boolean);
+}
 
-  const [, leadingColor, x, y, blur, spread = '0px', trailingColor] = parts;
-  const colorStr = leadingColor || trailingColor;
-  if (!colorStr) return [];
-  const color = cssColorToFigma(colorStr);
+export function mapTextEffects(computed = {}) {
+  return [
+    ...mapTextShadow(computed),
+    ...mapDropShadowFilter(computed),
+  ];
+}
 
-  return [{
+export function mapTextShadow(computed = {}) {
+  if (!computed.textShadow || computed.textShadow === 'none') return [];
+
+  return splitCssLayers(computed.textShadow)
+    .map((layer) => parseShadowEffect(layer, false))
+    .filter(Boolean);
+}
+
+export function mapDropShadowFilter(computed = {}) {
+  const filter = String(computed.filter || '').trim();
+  if (!filter || filter === 'none' || !filter.includes('drop-shadow(')) return [];
+
+  const effects = [];
+  const regex = /drop-shadow\(([^)]+(?:\)[^)]*)?)\)/gi;
+  let match;
+  while ((match = regex.exec(filter)) !== null) {
+    const effect = parseShadowEffect(match[1], false);
+    if (effect) {
+      effects.push(effect);
+    }
+  }
+  return effects;
+}
+
+const CSS_NAMED_COLORS = new Set([
+  'aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure', 'beige', 'bisque', 'black', 'blanchedalmond',
+  'blue', 'blueviolet', 'brown', 'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'coral', 'cornflowerblue',
+  'cornsilk', 'crimson', 'cyan', 'darkblue', 'darkcyan', 'darkgoldenrod', 'darkgray', 'darkgreen', 'darkgrey',
+  'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid', 'darkred', 'darksalmon', 'darkseagreen',
+  'darkslate50', 'darkslateblue', 'darkslategray', 'darkslategrey', 'darkturquoise', 'darkviolet', 'deeppink',
+  'deepskyblue', 'dimgray', 'dimgrey', 'dodgerblue', 'firebrick', 'floralwhite', 'forestgreen', 'fuchsia',
+  'gainsboro', 'ghostwhite', 'gold', 'goldenrod', 'gray', 'green', 'greenyellow', 'grey', 'honeydew', 'hotpink',
+  'indianred', 'indigo', 'ivory', 'khaki', 'lavender', 'lavenderblush', 'lawngreen', 'lemonchiffon', 'lightblue',
+  'lightcoral', 'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen', 'lightgrey', 'lightpink',
+  'lightsalmon', 'lightseagreen', 'lightskyblue', 'lightslategray', 'lightslategrey', 'lightsteelblue',
+  'lightyellow', 'lime', 'limegreen', 'linen', 'magenta', 'maroon', 'mediumaquamarine', 'mediumblue', 'mediumorchid',
+  'mediumpurple', 'mediumseagreen', 'mediumslateblue', 'mediumspringgreen', 'mediumturquoise', 'mediumvioletred',
+  'midnightblue', 'mintcream', 'mistyrose', 'moccasin', 'navajowhite', 'navy', 'oldlace', 'olive', 'olivedrab',
+  'orange', 'orangered', 'orchid', 'palegoldenrod', 'palegreen', 'paleturquoise', 'palevioletred', 'papayawhip',
+  'peachpuff', 'peru', 'pink', 'plum', 'powderblue', 'purple', 'rebeccapurple', 'red', 'rosybrown', 'royalblue',
+  'saddlebrown', 'salmon', 'sandybrown', 'seagreen', 'seashell', 'sienna', 'silver', 'skyblue', 'slateblue',
+  'slategray', 'slategrey', 'snow', 'springgreen', 'steelblue', 'tan', 'teal', 'thistle', 'tomato', 'turquoise',
+  'violet', 'wheat', 'white', 'whitesmoke', 'yellow', 'yellowgreen', 'transparent'
+]);
+
+function parseShadowEffect(value, allowSpread) {
+  const source = String(value || '').trim();
+
+  // 1. Check for functional colors or hex colors
+  const fnOrHexRegex = /(?:rgba?|hsla?|hwb|oklab|oklch|color)\([^)]+\)|#[0-9a-fA-F]{3,8}/gi;
+  const fnOrHexMatches = source.match(fnOrHexRegex) || [];
+  let colorStr = fnOrHexMatches[0];
+
+  let withoutColor = source;
+  if (colorStr) {
+    withoutColor = source.replace(colorStr, ' ');
+  } else {
+    // 2. Check for named colors
+    const words = source.match(/\b[a-zA-Z-]+\b/g) || [];
+    for (const word of words) {
+      const lowerWord = word.toLowerCase();
+      if (CSS_NAMED_COLORS.has(lowerWord) && lowerWord !== 'inset') {
+        colorStr = word;
+        withoutColor = source.replace(new RegExp(`\\b${word}\\b`, 'gi'), ' ');
+        break;
+      }
+    }
+  }
+
+  if (!colorStr) return null;
+
+  // Clean "inset" keyword if present
+  const cleaned = withoutColor.replace(/\binset\b/gi, ' ').trim();
+  const lengths = cleaned.match(/-?[\d.]+(?:px|em|rem|vh|vw|%)?|0/gi) || [];
+  if (lengths.length < 2) return null;
+
+  return {
     type: 'DROP_SHADOW',
-    color: { r: color.r, g: color.g, b: color.b, a: color.a },
-    offset: { x: parsePx(x), y: parsePx(y) },
-    radius: parsePx(blur),
-    spread: parsePx(spread),
+    color: shadowColor(colorStr),
+    offset: { x: parsePx(lengths[0]), y: parsePx(lengths[1]) },
+    radius: parsePx(lengths[2] || '0px'),
+    spread: allowSpread ? parsePx(lengths[3] || '0px') : 0,
     visible: true,
     blendMode: 'NORMAL',
-  }];
+  };
+}
+
+function shadowColor(colorStr) {
+  const color = cssColorToFigma(colorStr);
+  return { r: color.r, g: color.g, b: color.b, a: color.a };
 }
 
 // ─── TYPOGRAPHY ───────────────────────────────────────────────────────────────
@@ -453,6 +536,7 @@ export function mapTypography(computed, fontMap = {}, parentComputed = null) {
 
   const font = fontMap?.[fontKey] ?? { family: familyRaw, style: 'Regular' };
   const fontSize = parsePx(computed.fontSize) || 16;
+  const effects = mapTextEffects(computed);
 
   const result = {
     fontName: font,
@@ -466,9 +550,10 @@ export function mapTypography(computed, fontMap = {}, parentComputed = null) {
     textCase: TEXT_CASE_MAP[computed.textTransform] ?? 'ORIGINAL',
     // -webkit-text-stroke → outline text (color: transparent + stroke)
     fills: isTransparentCssColor(computed.color)
-      ? []
+      ? [solidPaint('transparent')]
       : [solidPaint(computed.color)],
     ...mapTextDecoration(computed),
+    ...(effects.length ? { effects } : {}),
   };
 
   if (shouldTruncateText(computed, parentComputed)) {

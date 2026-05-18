@@ -120,7 +120,7 @@ test('still reveals safe entry-animation content', async () => {
 }, 30000);
 
 test('preserves structured interactive children instead of collapsing them into text', async () => {
-  const { domTree } = await extractFromFile('./tests/vela/input.html', {
+  const { domTree } = await extractFromFile('./tests/landing-page/input.html', {
     width: 1440,
     height: 900,
   });

@@ -15,11 +15,13 @@ import {
   mapBackgroundColor,
   mapBorder,
   mapBoxShadow,
+  mapDropShadowFilter,
   mapTypography,
   mapTextStroke,
   shouldTruncateText,
   parseLinearGradient,
   parseLinearGradientLayers,
+  splitCssLayers,
 } from './css-to-figma.js';
 import { cssColorToFigma, solidPaint as colorSolidPaint } from '../utils/color.js';
 import { parsePx } from '../utils/units.js';
@@ -83,7 +85,7 @@ function buildNode(node, parentContext, ctx, path) {
       opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
       ...mapBorderRadius(computed, rect),
       ...mapBorder(computed),
-      effects: mapBoxShadow(computed),
+      effects: mapVisualEffects(computed),
       ...(computed.mixBlendMode && computed.mixBlendMode !== 'normal' ? {
         blendMode: computed.mixBlendMode.toUpperCase().replace(/-/g, '_'),
       } : {}),
@@ -159,7 +161,7 @@ function buildNode(node, parentContext, ctx, path) {
     ...mapOverflow(computed),
     ...mapBorderRadius(computed, rect),
     ...mapBorder(computed),
-    effects: mapBoxShadow(computed),
+    effects: mapVisualEffects(computed),
     opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
     ...(layout || {}),
     ...(flexAutoMarginLayout || {}),
@@ -429,7 +431,8 @@ function buildPseudoNode(pseudo, path, ctx = {}) {
   const pseudoId = `pseudo-${path}-${pseudo.name.replace(/\s+/g, '-').toLowerCase()}`;
   const isTextPseudo = pseudo.type === 'text' && Boolean(pseudo.content);
   const pseudoBackgrounds = isTextPseudo ? [] : buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor);
-  const pseudoEffects = pseudo.computed ? mapBoxShadow(pseudo.computed) : [];
+  const pseudoBackgroundPattern = isTextPseudo ? null : detectBackgroundPattern(pseudo.computed);
+  const pseudoEffects = pseudo.computed ? mapVisualEffects(pseudo.computed) : [];
   const pseudoStrokes = pseudo.computed ? mapBorder(pseudo.computed) : {};
   const textTypography = pseudo.computed
     ? {
@@ -458,6 +461,7 @@ function buildPseudoNode(pseudo, path, ctx = {}) {
     layoutPositioning: 'ABSOLUTE',
     opacity: roundFloat(pseudo.opacity ?? 1),
     fills: pseudoBackgrounds,
+    ...(pseudoBackgroundPattern ? { _backgroundPattern: pseudoBackgroundPattern } : {}),
     ...(isTextPseudo ? { clipsContent: false } : {}),
     ...pseudoStrokes,
     effects: pseudoEffects,
@@ -636,6 +640,10 @@ function buildPseudoBackgrounds(computed, fallbackFillColor) {
       : [];
   }
 
+  if (detectBackgroundPattern(computed)) {
+    return mapBackgroundColor(computed);
+  }
+
   const fills = mapBackgroundColor(computed);
   if (computed.backgroundImage && computed.backgroundImage.includes('linear-gradient')) {
     fills.push(...parseLinearGradientLayers(computed.backgroundImage));
@@ -654,6 +662,10 @@ function buildMergedPseudoBackgrounds(pseudo) {
 
 function shouldMergePseudoIntoParent(node, pseudo) {
   if (!node?.computed || !pseudo || pseudo.type === 'text' || pseudo.zOrder !== 'bottom') {
+    return false;
+  }
+
+  if (detectBackgroundPattern(pseudo.computed)) {
     return false;
   }
 
@@ -708,6 +720,13 @@ function applyPaintOpacity(paint, opacity) {
 
 function clonePaints(paints) {
   return (paints || []).map((paint) => JSON.parse(JSON.stringify(paint)));
+}
+
+function mapVisualEffects(computed = {}) {
+  return [
+    ...mapBoxShadow(computed),
+    ...mapDropShadowFilter(computed),
+  ];
 }
 
 function isPaginationNode(node) {
@@ -1712,28 +1731,158 @@ function mapFlexTextAxisAlignment(value, axisRole) {
 }
 
 function detectBackgroundPattern(computed) {
+  if (!computed) {
+    return null;
+  }
+
   const backgroundImage = computed.backgroundImage || '';
   const backgroundSize = computed.backgroundSize || '';
-  if (!backgroundImage.includes('linear-gradient') || !backgroundSize.includes('px')) {
+  if (!backgroundImage.includes('linear-gradient')) {
     return null;
   }
 
-  const gradientCount = (backgroundImage.match(/linear-gradient\(/g) || []).length;
-  if (gradientCount < 2) {
+  const repeatingPattern = detectRepeatingLinearGridPattern(backgroundImage);
+  if (repeatingPattern) {
+    return repeatingPattern;
+  }
+
+  return detectSizedLinearGridPattern(backgroundImage, backgroundSize);
+}
+
+function detectSizedLinearGridPattern(backgroundImage, backgroundSize) {
+  if (!String(backgroundSize || '').includes('px')) {
     return null;
   }
 
-  const sizeMatch = backgroundSize.match(/([\d.]+)px\s+([\d.]+)px/);
-  const colorMatch = backgroundImage.match(/rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}/);
-  if (!sizeMatch || !colorMatch) {
+  const layers = splitCssLayers(backgroundImage)
+    .filter((layer) => /^linear-gradient\(/i.test(layer.trim()));
+  if (layers.length < 2) {
+    return null;
+  }
+
+  const size = parseBackgroundGridSize(backgroundSize);
+  const color = findVisibleCssColor(backgroundImage);
+  if (!size || !color) {
     return null;
   }
 
   return {
     kind: 'grid',
-    cellWidth: Math.max(Math.round(parseFloat(sizeMatch[1])), 1),
-    cellHeight: Math.max(Math.round(parseFloat(sizeMatch[2])), 1),
-    strokeWeight: 1,
-    paint: colorSolidPaint(colorMatch[0]),
+    cellWidth: size.width,
+    cellHeight: size.height,
+    strokeWeight: detectGridStrokeWeight(layers) || 1,
+    paint: colorSolidPaint(color),
+    verticalLines: true,
+    horizontalLines: true,
   };
+}
+
+function detectRepeatingLinearGridPattern(backgroundImage) {
+  const layers = splitCssLayers(backgroundImage)
+    .map((layer) => parseRepeatingLinearGridLayer(layer))
+    .filter(Boolean);
+
+  if (layers.length === 0) {
+    return null;
+  }
+
+  const vertical = layers.find((layer) => layer.axis === 'x');
+  const horizontal = layers.find((layer) => layer.axis === 'y');
+  if (!vertical && !horizontal) {
+    return null;
+  }
+
+  const first = vertical || horizontal;
+  return {
+    kind: 'grid',
+    cellWidth: Math.max(Math.round(vertical?.cellSize || horizontal?.cellSize || 1), 1),
+    cellHeight: Math.max(Math.round(horizontal?.cellSize || vertical?.cellSize || 1), 1),
+    strokeWeight: Math.max(Math.round(Math.min(
+      vertical?.strokeWeight || horizontal?.strokeWeight || 1,
+      horizontal?.strokeWeight || vertical?.strokeWeight || 1
+    )), 1),
+    paint: colorSolidPaint((vertical || horizontal).color),
+    verticalLines: Boolean(vertical),
+    horizontalLines: Boolean(horizontal),
+  };
+}
+
+function parseRepeatingLinearGridLayer(layer) {
+  const source = String(layer || '').trim();
+  if (!/^repeating-linear-gradient\(/i.test(source)) {
+    return null;
+  }
+
+  const color = findVisibleCssColor(source);
+  const positions = extractPxPositions(source);
+  if (!color || positions.length < 2) {
+    return null;
+  }
+
+  const axis = getLinearGradientAxis(source);
+  const unique = Array.from(new Set(positions.map((value) => roundFloat(value, 3)))).sort((a, b) => a - b);
+  const cellSize = Math.max(...unique);
+  const strokeWeight = getSmallestPositiveGap(unique) || 1;
+  if (!Number.isFinite(cellSize) || cellSize <= 0) {
+    return null;
+  }
+
+  return { axis, cellSize, strokeWeight, color };
+}
+
+function parseBackgroundGridSize(backgroundSize) {
+  const values = extractPxPositions(String(backgroundSize || '').split(',')[0] || '');
+  if (values.length === 0) {
+    return null;
+  }
+
+  return {
+    width: Math.max(Math.round(values[0]), 1),
+    height: Math.max(Math.round(values[1] || values[0]), 1),
+  };
+}
+
+function detectGridStrokeWeight(layers) {
+  const weights = [];
+  for (const layer of layers) {
+    const positions = Array.from(new Set(extractPxPositions(layer))).sort((a, b) => a - b);
+    const gap = getSmallestPositiveGap(positions);
+    if (gap) weights.push(gap);
+  }
+  return weights.length ? Math.max(Math.round(Math.min(...weights)), 1) : 1;
+}
+
+function getSmallestPositiveGap(values) {
+  let best = null;
+  for (let index = 1; index < values.length; index++) {
+    const gap = values[index] - values[index - 1];
+    if (gap > 0 && (best === null || gap < best)) {
+      best = gap;
+    }
+  }
+  return best;
+}
+
+function extractPxPositions(value) {
+  return (String(value || '').match(/-?[\d.]+px/g) || [])
+    .map((part) => parseFloat(part))
+    .filter((number) => Number.isFinite(number));
+}
+
+function findVisibleCssColor(value) {
+  const matches = String(value || '').match(/rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}/g) || [];
+  for (const match of matches) {
+    if (cssColorToFigma(match).a > 0) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function getLinearGradientAxis(layer) {
+  const lower = String(layer || '').toLowerCase();
+  if (/repeating-linear-gradient\(\s*(90deg|270deg|to\s+(right|left))/.test(lower)) {
+    return 'x';
+  }
+  return 'y';
 }

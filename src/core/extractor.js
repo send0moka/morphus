@@ -83,7 +83,7 @@ async function stabilizePage(page) {
         return false;
       }
 
-      if (cs.position === 'absolute' || cs.position === 'fixed') {
+      if (cs.position === 'fixed') {
         return false;
       }
 
@@ -452,7 +452,8 @@ function walkDOMInBrowser() {
       parseFloat(cs.paddingRight) > 0 ||
       parseFloat(cs.paddingBottom) > 0 ||
       parseFloat(cs.paddingLeft) > 0 ||
-      cs.boxShadow !== 'none';
+      cs.boxShadow !== 'none' ||
+      cs.filter !== 'none';
 
     const inlineVisualFragments = extractInlineVisualFragments(el, tag, cs, csBefore, csAfter, rect, rawText, hasVisualBox);
     if (inlineVisualFragments) {
@@ -1081,6 +1082,7 @@ function walkDOMInBrowser() {
       borderBottomStyle: cs.borderBottomStyle,
       borderLeftStyle: cs.borderLeftStyle,
       boxShadow: cs.boxShadow,
+      filter: cs.filter,
       overflow: cs.overflow,
       overflowX: cs.overflowX,
       overflowY: cs.overflowY,
@@ -1098,6 +1100,7 @@ function walkDOMInBrowser() {
       textTransform: cs.textTransform,
       whiteSpace: cs.whiteSpace,
       textOverflow: cs.textOverflow,
+      textShadow: cs.textShadow,
       textDecoration: cs.textDecoration,
       textDecorationLine: cs.textDecorationLine,
       textDecorationStyle: cs.textDecorationStyle,
@@ -1250,6 +1253,7 @@ function walkDOMInBrowser() {
       textTransform: cs.textTransform,
       color: cs.color,
       opacity: cs.opacity,
+      textShadow: cs.textShadow,
       textDecoration: cs.textDecoration,
       textDecorationLine: cs.textDecorationLine,
       textDecorationStyle: cs.textDecorationStyle,
@@ -1257,6 +1261,7 @@ function walkDOMInBrowser() {
       textDecorationThickness: cs.textDecorationThickness,
       webkitTextStrokeWidth: cs.webkitTextStrokeWidth,
       webkitTextStrokeColor: cs.webkitTextStrokeColor,
+      filter: cs.filter,
     };
   }
 
@@ -1597,7 +1602,8 @@ function walkDOMInBrowser() {
       parseFloat(cs.borderRightWidth) > 0 ||
       parseFloat(cs.borderBottomWidth) > 0 ||
       parseFloat(cs.borderLeftWidth) > 0 ||
-      cs.boxShadow !== 'none';
+      cs.boxShadow !== 'none' ||
+      cs.filter !== 'none';
   }
 
   function estimatePseudoTextRect(parentRect, parentStyles, pseudoStyles, pseudoType, content = '') {

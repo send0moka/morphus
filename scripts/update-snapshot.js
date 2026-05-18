@@ -7,8 +7,8 @@ import { writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { convertHtmlFile } from '../src/pipeline/convert.js';
 
-const SNAPSHOT_PATH = 'tests/vela/expected-snapshot.json';
-const INPUT_PATH = './tests/vela/input.html';
+const SNAPSHOT_PATH = 'tests/landing-page/expected-snapshot.json';
+const INPUT_PATH = './tests/landing-page/input.html';
 
 const output = await convertHtmlFile(INPUT_PATH, {
   viewport: { width: 1440, height: 900 },

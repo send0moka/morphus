@@ -3,8 +3,8 @@
  * Figma Plugin main thread - receives HTML or JSON and creates Figma nodes.
  */
 
-// const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
-const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
+const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
+// const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 
 figma.showUI(__html__, { width: 420, height: 505 });
@@ -234,9 +234,10 @@ async function buildFromSnapshot(data, options = {}) {
   reportProgress(options, 'Building nodes...', 96);
   let nodeCount = 0;
   const page = figma.currentPage;
+  const builtNodes = await buildNodesInBatches(figmaTree, 'NONE', styleRegistry);
 
-  for (const nodeSpec of figmaTree) {
-    const node = await buildNode(nodeSpec, 'NONE', styleRegistry);
+  for (let index = 0; index < builtNodes.length; index++) {
+    const node = builtNodes[index];
     if (node) {
       if (viewportLabel) {
         node.name = `${viewportLabel} - ${node.name}`;
@@ -349,52 +350,96 @@ function isValidCodePoint(number) {
 
 // Font pre-loading
 
+const loadedFontPromises = {};
+
 async function preloadFonts(nodes) {
   const availableByFamily = await listAvailableFontsByFamily();
-  const cache = {};
+  const fallback = { family: 'Inter', style: 'Regular' };
+  const requestsByKey = {};
+  const resolvedByKey = {};
 
-  async function resolveFontName(font) {
-    const fallback = { family: 'Inter', style: 'Regular' };
-    const requested = normalizeFontName(font) || fallback;
-    const key = JSON.stringify(requested);
+  addFontRequest(requestsByKey, fallback);
 
-    if (cache[key]) {
-      return cache[key];
-    }
-
-    cache[key] = loadBestAvailableFont(requested, availableByFamily)
-      .catch(function () {
-        return fallback;
-      });
-
-    return cache[key];
+  for (let index = 0; index < (nodes || []).length; index++) {
+    collectFontRequests(nodes[index], requestsByKey, fallback);
   }
 
-  await resolveFontName({ family: 'Inter', style: 'Regular' });
+  const keys = Object.keys(requestsByKey);
+  await Promise.all(keys.map((key) => {
+    const requested = requestsByKey[key];
+    return loadBestAvailableFont(requested, availableByFamily)
+      .then((font) => {
+        resolvedByKey[key] = font;
+      })
+      .catch(function () {
+        resolvedByKey[key] = fallback;
+      });
+  }));
 
-  for (const node of nodes) {
-    await normalizeNodeFonts(node, resolveFontName);
+  for (let index = 0; index < (nodes || []).length; index++) {
+    applyPreloadedFonts(nodes[index], resolvedByKey, fallback);
   }
 }
 
-async function normalizeNodeFonts(node, resolveFontName) {
+function collectFontRequests(node, requestsByKey, fallback) {
+  if (!node) {
+    return;
+  }
+
   if (node.type === 'TEXT') {
-    node.fontName = await resolveFontName(node.fontName || { family: 'Inter', style: 'Regular' });
+    addFontRequest(requestsByKey, node.fontName || fallback);
   } else if (node.fontName) {
-    node.fontName = await resolveFontName(node.fontName);
+    addFontRequest(requestsByKey, node.fontName);
   }
 
   const textRuns = node.textRuns || [];
   for (let index = 0; index < textRuns.length; index++) {
     if (textRuns[index] && textRuns[index].fontName) {
-      textRuns[index].fontName = await resolveFontName(textRuns[index].fontName);
+      addFontRequest(requestsByKey, textRuns[index].fontName);
     }
   }
 
   const children = node.children || [];
   for (let index = 0; index < children.length; index++) {
-    await normalizeNodeFonts(children[index], resolveFontName);
+    collectFontRequests(children[index], requestsByKey, fallback);
   }
+}
+
+function applyPreloadedFonts(node, resolvedByKey, fallback) {
+  if (!node) {
+    return;
+  }
+
+  if (node.type === 'TEXT') {
+    node.fontName = getResolvedFontName(node.fontName || fallback, resolvedByKey, fallback);
+  } else if (node.fontName) {
+    node.fontName = getResolvedFontName(node.fontName, resolvedByKey, fallback);
+  }
+
+  const textRuns = node.textRuns || [];
+  for (let index = 0; index < textRuns.length; index++) {
+    if (textRuns[index] && textRuns[index].fontName) {
+      textRuns[index].fontName = getResolvedFontName(textRuns[index].fontName, resolvedByKey, fallback);
+    }
+  }
+
+  const children = node.children || [];
+  for (let index = 0; index < children.length; index++) {
+    applyPreloadedFonts(children[index], resolvedByKey, fallback);
+  }
+}
+
+function addFontRequest(requestsByKey, font) {
+  const normalized = normalizeFontName(font) || { family: 'Inter', style: 'Regular' };
+  const key = getFontCacheKey(normalized);
+  if (!requestsByKey[key]) {
+    requestsByKey[key] = normalized;
+  }
+}
+
+function getResolvedFontName(font, resolvedByKey, fallback) {
+  const normalized = normalizeFontName(font) || fallback;
+  return resolvedByKey[getFontCacheKey(normalized)] || fallback;
 }
 
 async function listAvailableFontsByFamily() {
@@ -430,14 +475,32 @@ async function loadBestAvailableFont(requested, availableByFamily) {
 
   for (let index = 0; index < candidates.length; index++) {
     try {
-      await figma.loadFontAsync(candidates[index]);
+      await loadFontCached(candidates[index]);
       return candidates[index];
     } catch (err) {}
   }
 
   const fallback = { family: 'Inter', style: 'Regular' };
-  await figma.loadFontAsync(fallback);
+  await loadFontCached(fallback);
   return fallback;
+}
+
+function loadFontCached(font) {
+  const normalized = normalizeFontName(font) || { family: 'Inter', style: 'Regular' };
+  const key = getFontCacheKey(normalized);
+  if (!loadedFontPromises[key]) {
+    loadedFontPromises[key] = figma.loadFontAsync(normalized)
+      .catch((err) => {
+        delete loadedFontPromises[key];
+        throw err;
+      });
+  }
+  return loadedFontPromises[key];
+}
+
+function getFontCacheKey(font) {
+  const normalized = normalizeFontName(font) || { family: 'Inter', style: 'Regular' };
+  return `${normalized.family}|||${normalized.style}`;
 }
 
 function buildFontCandidateList(requested, availableByFamily) {
@@ -573,10 +636,12 @@ async function createLocalStylesFromTree(nodes, styleNamespace = DEFAULT_STYLE_N
   const localTextStyles = await getLocalStylesSafe('text');
   pruneGeneratedStyles(localPaintStyles, catalog.paintStyles, styleNamespace);
   pruneGeneratedStyles(localTextStyles, catalog.textStyles, styleNamespace);
+  const localPaintStylesByName = indexLocalStylesByName(localPaintStyles);
+  const localTextStylesByName = indexLocalStylesByName(localTextStyles);
 
   if (typeof figma.createPaintStyle === 'function') {
     for (const def of catalog.paintStyles) {
-      const styleId = ensurePaintStyle(def, localPaintStyles);
+      const styleId = ensurePaintStyle(def, localPaintStyles, localPaintStylesByName);
       if (styleId) {
         paintByKey[def.key] = styleId;
       }
@@ -584,12 +649,12 @@ async function createLocalStylesFromTree(nodes, styleNamespace = DEFAULT_STYLE_N
   }
 
   if (typeof figma.createTextStyle === 'function') {
-    for (const def of catalog.textStyles) {
-      const styleId = await ensureTextStyle(def, localTextStyles);
+    await Promise.all(catalog.textStyles.map(async (def) => {
+      const styleId = await ensureTextStyle(def, localTextStyles, localTextStylesByName);
       if (styleId) {
         textByKey[def.key] = styleId;
       }
-    }
+    }));
   }
 
   return {
@@ -720,15 +785,16 @@ function pruneGeneratedStyles(localStyles, defs, styleNamespace = DEFAULT_STYLE_
 
   for (let index = 0; index < localStyles.length; index++) {
     const style = localStyles[index];
-    if (!style || !style.name) {
+    const styleName = getLocalStyleNameSafe(style);
+    if (!styleName) {
       continue;
     }
 
-    if (!style.name.startsWith(`${styleNamespace} / `)) {
+    if (!styleName.startsWith(`${styleNamespace} / `)) {
       continue;
     }
 
-    if (keep.has(style.name)) {
+    if (keep.has(styleName)) {
       continue;
     }
 
@@ -737,6 +803,15 @@ function pruneGeneratedStyles(localStyles, defs, styleNamespace = DEFAULT_STYLE_
         style.remove();
       }
     } catch (err) {}
+  }
+}
+
+function getLocalStyleNameSafe(style) {
+  try {
+    const name = style ? style.name : '';
+    return name || '';
+  } catch (err) {
+    return '';
   }
 }
 
@@ -1211,12 +1286,15 @@ async function getLocalStylesSafe(kind) {
   return [];
 }
 
-function ensurePaintStyle(def, localStyles) {
+function ensurePaintStyle(def, localStyles, localStylesByName = null) {
   try {
-    let style = findLocalStyleByName(localStyles, def.name);
+    let style = localStylesByName ? localStylesByName[def.name] : findLocalStyleByName(localStyles, def.name);
     if (!style) {
       style = figma.createPaintStyle();
       localStyles.push(style);
+      if (localStylesByName) {
+        localStylesByName[def.name] = style;
+      }
     }
 
     style.name = def.name;
@@ -1230,14 +1308,17 @@ function ensurePaintStyle(def, localStyles) {
   }
 }
 
-async function ensureTextStyle(def, localStyles) {
+async function ensureTextStyle(def, localStyles, localStylesByName = null) {
   try {
-    await figma.loadFontAsync(def.fontName);
+    await loadFontCached(def.fontName);
 
-    let style = findLocalStyleByName(localStyles, def.name);
+    let style = localStylesByName ? localStylesByName[def.name] : findLocalStyleByName(localStyles, def.name);
     if (!style) {
       style = figma.createTextStyle();
       localStyles.push(style);
+      if (localStylesByName) {
+        localStylesByName[def.name] = style;
+      }
     }
 
     style.name = def.name;
@@ -1257,9 +1338,21 @@ async function ensureTextStyle(def, localStyles) {
   }
 }
 
+function indexLocalStylesByName(styles) {
+  const byName = {};
+  for (let index = 0; index < (styles || []).length; index++) {
+    const style = styles[index];
+    const name = getLocalStyleNameSafe(style);
+    if (name) {
+      byName[name] = style;
+    }
+  }
+  return byName;
+}
+
 function findLocalStyleByName(styles, name) {
   for (let index = 0; index < styles.length; index++) {
-    if (styles[index] && styles[index].name === name) {
+    if (getLocalStyleNameSafe(styles[index]) === name) {
       return styles[index];
     }
   }
@@ -1450,13 +1543,40 @@ function cloneValue(value) {
 
 // Node builder
 
+const BUILD_NODE_BATCH_SIZE = 24;
+const BUILD_YIELD_INTERVAL_MS = 350;
+const BUILD_YIELD_DELAY_MS = 0;
 let lastYieldTime = Date.now();
+let pendingBuildYield = null;
+
+async function buildNodesInBatches(specs, parentLayoutMode, styleRegistry) {
+  const source = Array.isArray(specs) ? specs : [];
+  const nodes = new Array(source.length);
+
+  for (let start = 0; start < source.length; start += BUILD_NODE_BATCH_SIZE) {
+    const end = Math.min(start + BUILD_NODE_BATCH_SIZE, source.length);
+    const batch = [];
+    for (let index = start; index < end; index++) {
+      batch.push(buildNode(source[index], parentLayoutMode, styleRegistry));
+    }
+
+    const built = await Promise.all(batch);
+    for (let index = 0; index < built.length; index++) {
+      nodes[start + index] = built[index];
+    }
+
+    await yieldToFigmaIfNeeded();
+  }
+
+  return nodes;
+}
 
 async function buildNode(spec, parentLayoutMode, styleRegistry) {
-  if (Date.now() - lastYieldTime > 200) {
-    await new Promise(resolve => setTimeout(resolve, 1));
-    lastYieldTime = Date.now();
+  if (!spec) {
+    return null;
   }
+  await yieldToFigmaIfNeeded();
+
   if (spec.type === 'IMAGE' || spec._image) {
     return await buildImageNode(spec, parentLayoutMode, styleRegistry);
   }
@@ -1467,6 +1587,21 @@ async function buildNode(spec, parentLayoutMode, styleRegistry) {
     return await buildTextNode(spec, parentLayoutMode, styleRegistry);
   }
   return buildFrameNode(spec, parentLayoutMode, styleRegistry);
+}
+
+async function yieldToFigmaIfNeeded() {
+  if (Date.now() - lastYieldTime <= BUILD_YIELD_INTERVAL_MS) {
+    return;
+  }
+
+  if (!pendingBuildYield) {
+    pendingBuildYield = sleep(BUILD_YIELD_DELAY_MS).then(() => {
+      lastYieldTime = Date.now();
+      pendingBuildYield = null;
+    });
+  }
+
+  await pendingBuildYield;
 }
 
 async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
@@ -1521,21 +1656,29 @@ async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
   return frame;
 }
 
+const imageHashBySource = {};
+
 function createImageFillPaint(spec) {
   if (!figma.createImage || !spec || !spec._image || !spec._image.src) {
     return null;
   }
 
   try {
-    const bytes = decodeImageBytes(spec._image.src);
-    if (!bytes || bytes.length === 0) {
-      return null;
+    const src = String(spec._image.src);
+    let imageHash = imageHashBySource[src];
+    if (!imageHash) {
+      const bytes = decodeImageBytes(src);
+      if (!bytes || bytes.length === 0) {
+        return null;
+      }
+
+      imageHash = figma.createImage(bytes).hash;
+      imageHashBySource[src] = imageHash;
     }
 
-    const image = figma.createImage(bytes);
     return {
       type: 'IMAGE',
-      imageHash: image.hash,
+      imageHash,
       scaleMode: mapObjectFitToImageScaleMode(spec._objectFit),
     };
   } catch (err) {
@@ -1711,6 +1854,17 @@ async function buildTextNode(spec, parentLayoutMode, styleRegistry) {
 
 async function buildMixedTextGroup(spec, styleRegistry) {
   const textRuns = getAlignedTextRuns(spec);
+  // Replace overlay run characters in the base text characters with spaces of the same length to preserve layout metrics
+  let baseCharacters = spec.characters || '';
+  const overlayRunsForBase = textRuns.filter((run) => run && ((run.strokes && run.strokes.length > 0) || (run.effects && run.effects.length > 0)));
+  for (const run of overlayRunsForBase) {
+    const start = Number.isFinite(run.start) ? run.start : 0;
+    const end = Number.isFinite(run.end) ? run.end : start + String(run.text || '').length;
+    if (start >= 0 && end <= baseCharacters.length) {
+      const len = end - start;
+      baseCharacters = baseCharacters.substring(0, start) + ' '.repeat(len) + baseCharacters.substring(end);
+    }
+  }
   const frame = figma.createFrame();
   frame.name = spec.name;
   frame.x = spec.x || 0;
@@ -1722,18 +1876,30 @@ async function buildMixedTextGroup(spec, styleRegistry) {
   applyChildLayoutSizing(frame, spec);
 
   const baseText = figma.createText();
-  applyBaseTextProps(baseText, Object.assign({}, spec, { x: 0, y: 0 }));
-  applyTextRunStyles(baseText, textRuns);
-  await applyTextStyleIds(baseText, Object.assign({}, spec, { x: 0, y: 0 }), textRuns, styleRegistry);
-  applyTextDecorations(baseText, spec, textRuns);
-  applyTextSizing(baseText, Object.assign({}, spec, { x: 0, y: 0 }));
+  applyBaseTextProps(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }));
+  // Hide overlay runs (runs with outlines or shadow effects) in the base text layer by making them transparent
+  const baseTextRuns = textRuns.map((run) => {
+    if (run && ((run.strokes && run.strokes.length > 0) || (run.effects && run.effects.length > 0))) {
+      const copy = Object.assign({}, run);
+      copy.fills = [{ type: 'SOLID', color: { r: 0, g: 0, b: 0 }, opacity: 0 }];
+      return copy;
+    }
+    return run;
+  });
+
+  applyTextRunStyles(baseText, baseTextRuns);
+  await applyTextStyleIds(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }), baseTextRuns, styleRegistry);
+  applyTextDecorations(baseText, spec, baseTextRuns);
+  applyTextSizing(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }));
   frame.appendChild(baseText);
 
-  const outlineRuns = textRuns.filter((run) => run && run.strokes && run.strokes.length > 0);
+  const outlineRuns = textRuns.filter((run) => run && ((run.strokes && run.strokes.length > 0) || (run.effects && run.effects.length > 0)));
   for (const run of outlineRuns) {
+    const hasStrokes = run.strokes && run.strokes.length > 0;
+    const nameSuffix = hasStrokes ? ' / outline' : ' / shadow';
     const overlay = figma.createText();
     applyBaseTextProps(overlay, {
-      name: spec.name + ' / outline',
+      name: spec.name + nameSuffix,
       characters: run.text,
       x: 0,
       y: estimateRunYOffset(spec, run),
@@ -1748,10 +1914,11 @@ async function buildMixedTextGroup(spec, styleRegistry) {
       fills: run.fills || [],
       strokes: run.strokes || [],
       strokeWeight: run.strokeWeight || 1,
+      effects: run.effects || spec.effects || [],
       opacity: spec.opacity,
     });
     await applyTextStyleIds(overlay, {
-      name: spec.name + ' / outline',
+      name: spec.name + nameSuffix,
       characters: run.text,
       x: 0,
       y: estimateRunYOffset(spec, run),
@@ -1766,6 +1933,7 @@ async function buildMixedTextGroup(spec, styleRegistry) {
       fills: run.fills || [],
       strokes: run.strokes || [],
       strokeWeight: run.strokeWeight || 1,
+      effects: run.effects || spec.effects || [],
       opacity: spec.opacity,
     }, [], styleRegistry);
     applyTextSizing(overlay, { width: spec.width, height: spec.height });
@@ -1798,6 +1966,9 @@ function applyBaseTextProps(text, spec) {
   if (spec.strokes) {
     text.strokes = spec.strokes;
     text.strokeWeight = spec.strokeWeight || 1;
+  }
+  if (spec.effects && spec.effects.length > 0) {
+    applyFrameEffects(text, spec.effects);
   }
   if (spec.textTruncation) {
     try {
@@ -2100,8 +2271,10 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
   await applyPaintStyleIds(frame, spec, styleRegistry);
 
   const childSpecs = preparedLayout.children;
-  for (const childSpec of childSpecs) {
-    const child = await buildNode(childSpec, frame.layoutMode || 'NONE', styleRegistry);
+  const childNodes = await buildNodesInBatches(childSpecs, frame.layoutMode || 'NONE', styleRegistry);
+  for (let index = 0; index < childNodes.length; index++) {
+    const child = childNodes[index];
+    const childSpec = childSpecs[index];
     if (child) {
       frame.appendChild(child);
       if (childSpec.layoutPositioning === 'ABSOLUTE' && frame.layoutMode !== 'NONE') {
@@ -2567,32 +2740,41 @@ function applyBackgroundPattern(frame, pattern) {
   layer.fills = [];
   layer.strokes = [];
   layer.clipsContent = true;
+  if (frame.layoutMode && frame.layoutMode !== 'NONE') {
+    try {
+      layer.layoutPositioning = 'ABSOLUTE';
+    } catch (err) {}
+  }
 
   const cellWidth = Math.max(pattern.cellWidth || 1, 1);
   const cellHeight = Math.max(pattern.cellHeight || 1, 1);
   const strokeWeight = Math.max(pattern.strokeWeight || 1, 1);
   const paint = pattern.paint ? [pattern.paint] : [];
 
-  for (let x = 0; x < frame.width; x += cellWidth) {
-    const line = figma.createFrame();
-    line.name = 'grid-v';
-    line.x = x;
-    line.y = 0;
-    line.resize(strokeWeight, frame.height);
-    line.fills = paint;
-    line.strokes = [];
-    layer.appendChild(line);
+  if (pattern.verticalLines !== false) {
+    for (let x = 0; x < frame.width; x += cellWidth) {
+      const line = figma.createFrame();
+      line.name = 'grid-v';
+      line.x = x;
+      line.y = 0;
+      line.resize(strokeWeight, frame.height);
+      line.fills = paint;
+      line.strokes = [];
+      layer.appendChild(line);
+    }
   }
 
-  for (let y = 0; y < frame.height; y += cellHeight) {
-    const line = figma.createFrame();
-    line.name = 'grid-h';
-    line.x = 0;
-    line.y = y;
-    line.resize(frame.width, strokeWeight);
-    line.fills = paint;
-    line.strokes = [];
-    layer.appendChild(line);
+  if (pattern.horizontalLines !== false) {
+    for (let y = 0; y < frame.height; y += cellHeight) {
+      const line = figma.createFrame();
+      line.name = 'grid-h';
+      line.x = 0;
+      line.y = y;
+      line.resize(frame.width, strokeWeight);
+      line.fills = paint;
+      line.strokes = [];
+      layer.appendChild(line);
+    }
   }
 
   frame.appendChild(layer);
@@ -2610,7 +2792,7 @@ function layoutTopLevelNodes(page) {
 
 function hasOutlineRuns(value) {
   const runs = Array.isArray(value) ? value : (value.textRuns || []);
-  return Boolean(runs.some((run) => run && run.strokes && run.strokes.length > 0));
+  return Boolean(runs.some((run) => run && ((run.strokes && run.strokes.length > 0) || (run.effects && run.effects.length > 0))));
 }
 
 function getAlignedTextRuns(spec) {
