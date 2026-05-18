@@ -1453,7 +1453,7 @@ function cloneValue(value) {
 let lastYieldTime = Date.now();
 
 async function buildNode(spec, parentLayoutMode, styleRegistry) {
-  if (Date.now() - lastYieldTime > 35) {
+  if (Date.now() - lastYieldTime > 200) {
     await new Promise(resolve => setTimeout(resolve, 1));
     lastYieldTime = Date.now();
   }
