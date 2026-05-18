@@ -458,6 +458,7 @@ function buildPseudoNode(pseudo, path, ctx = {}) {
     layoutPositioning: 'ABSOLUTE',
     opacity: roundFloat(pseudo.opacity ?? 1),
     fills: pseudoBackgrounds,
+    ...(isTextPseudo ? { clipsContent: false } : {}),
     ...pseudoStrokes,
     effects: pseudoEffects,
     _isPseudo: true,
@@ -640,10 +641,8 @@ function buildPseudoBackgrounds(computed, fallbackFillColor) {
     fills.push(...parseLinearGradientLayers(computed.backgroundImage));
   }
 
-  if (fills.length === 0 && fallbackFillColor && fallbackFillColor !== 'noise-texture') {
-    fills.push(colorSolidPaint(fallbackFillColor));
-  }
-
+  // A pseudo box inherits `color` from its parent, but that text color is not a
+  // background paint. Unsupported decorative backgrounds should stay transparent.
   return fills;
 }
 

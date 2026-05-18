@@ -655,6 +655,7 @@ test('assigns a fallback font to pseudo text content', () => {
     family: 'Inter',
     style: 'Regular',
   });
+  expect(tree.children[0].clipsContent).toBe(false);
 });
 
 test('merges full-cover negative z pseudo backgrounds into the parent fill', () => {
@@ -695,6 +696,58 @@ test('merges full-cover negative z pseudo backgrounds into the parent fill', () 
   expect(builtNav.fills[0].type).toBe('GRADIENT_LINEAR');
 });
 
+test('does not use inherited pseudo text color as a background fallback', () => {
+  const hero = frameNode({
+    tag: 'header',
+    classList: ['hero'],
+    rect: { x: 0, y: 0, width: 1440, height: 785 },
+    computed: {
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      color: 'rgb(204, 204, 204)',
+      overflow: 'hidden',
+    },
+    pseudo: {
+      before: {
+        name: 'header.hero::before',
+        type: 'box',
+        content: null,
+        rect: { x: 0, y: 0, width: 1440, height: 785 },
+        fillColor: 'rgb(204, 204, 204)',
+        opacity: 1,
+        position: 'absolute',
+        zOrder: 'bottom',
+        computed: baseComputed({
+          position: 'absolute',
+          width: '1440px',
+          height: '785px',
+          color: 'rgb(204, 204, 204)',
+          backgroundColor: 'rgba(0, 0, 0, 0)',
+          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 50px, rgba(200, 255, 0, 0.03) 51px)',
+        }),
+      },
+      after: null,
+    },
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1440, height: 785 },
+    computed: {
+      backgroundColor: 'rgb(10, 10, 10)',
+    },
+    children: [hero],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtHero = tree.children[0];
+
+  expect(tree.fills[0]).toEqual({
+    type: 'SOLID',
+    color: { r: 10 / 255, g: 10 / 255, b: 10 / 255 },
+    opacity: 1,
+  });
+  expect(builtHero.fills).toEqual([]);
+});
+
 test('preserves inline SVG markup as a single SVG node', () => {
   const svgMarkup = '<svg viewBox="0 0 200 220" xmlns="http://www.w3.org/2000/svg"><path d="M40 80 L80 40" stroke="#2B2220" fill="none"/></svg>';
   const svg = frameNode({
@@ -726,6 +779,79 @@ test('preserves inline SVG markup as a single SVG node', () => {
   expect(builtSvg.height).toBe(403);
   expect(builtSvg.opacity).toBe(0.15);
   expect(builtSvg.children).toBeUndefined();
+});
+
+test('maps inline text decoration runs to Figma text decoration properties', () => {
+  const lede = textContainerNode({
+    tag: 'p',
+    classList: ['lede'],
+    text: 'Learn HTML and CSS',
+    rect: { x: 0, y: 0, width: 260, height: 32 },
+    computed: {
+      color: 'rgb(153, 153, 153)',
+      fontFamily: 'Georgia',
+      fontStyle: 'italic',
+      fontSize: '20px',
+      lineHeight: '32px',
+    },
+    textRuns: [
+      {
+        text: 'Learn ',
+        computed: baseComputed({
+          color: 'rgb(153, 153, 153)',
+          fontFamily: 'Georgia',
+          fontStyle: 'italic',
+          fontSize: '20px',
+          lineHeight: '32px',
+        }),
+      },
+      {
+        text: 'HTML',
+        computed: baseComputed({
+          color: 'rgb(100, 216, 255)',
+          fontFamily: 'Georgia',
+          fontStyle: 'italic',
+          fontSize: '20px',
+          lineHeight: '32px',
+          textDecorationLine: 'underline',
+          textDecorationStyle: 'dotted',
+          textDecorationColor: 'rgb(100, 216, 255)',
+        }),
+      },
+      {
+        text: ' and CSS',
+        computed: baseComputed({
+          color: 'rgb(153, 153, 153)',
+          fontFamily: 'Georgia',
+          fontStyle: 'italic',
+          fontSize: '20px',
+          lineHeight: '32px',
+        }),
+      },
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 300, height: 80 },
+    children: [lede],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const text = tree.children[0];
+
+  expect(text.type).toBe('TEXT');
+  expect(text.textRuns[1]).toEqual(expect.objectContaining({
+    text: 'HTML',
+    textDecoration: 'UNDERLINE',
+    textDecorationStyle: 'DOTTED',
+    textDecorationColor: {
+      value: {
+        type: 'SOLID',
+        color: { r: 100 / 255, g: 216 / 255, b: 1 },
+        opacity: 1,
+      },
+    },
+  }));
 });
 
 test('maps one-sided css borders to individual Figma stroke weights', () => {

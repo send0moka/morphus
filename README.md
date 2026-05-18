@@ -32,6 +32,9 @@ npm test
 npm run snapshot:update
 ```
 
+## Project Checklist
+See [CHECKLIST.md](CHECKLIST.md) for the list of completed project items.
+
 ## Public Use
 To let other people use the plugin without running the local server, deploy the converter as a public HTTPS Node/Playwright service and update the plugin's converter URL. See [docs/deployment.md](docs/deployment.md).
 

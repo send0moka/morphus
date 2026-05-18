@@ -36,6 +36,22 @@ function makeNode(type) {
     setRangeLineHeight() {},
     setRangeLetterSpacing() {},
     setRangeTextCase() {},
+    setRangeTextDecoration(start, end, value) {
+      this.rangeTextDecorations = this.rangeTextDecorations || [];
+      this.rangeTextDecorations.push({ start, end, value });
+    },
+    setRangeTextDecorationStyle(start, end, value) {
+      this.rangeTextDecorationStyles = this.rangeTextDecorationStyles || [];
+      this.rangeTextDecorationStyles.push({ start, end, value });
+    },
+    setRangeTextDecorationColor(start, end, value) {
+      this.rangeTextDecorationColors = this.rangeTextDecorationColors || [];
+      this.rangeTextDecorationColors.push({ start, end, value });
+    },
+    setRangeTextDecorationThickness(start, end, value) {
+      this.rangeTextDecorationThicknesses = this.rangeTextDecorationThicknesses || [];
+      this.rangeTextDecorationThicknesses.push({ start, end, value });
+    },
   };
 }
 
@@ -1087,6 +1103,67 @@ test('applies side-specific border weights for underline-like borders', async ()
   expect(link.strokeTopWeight).toBe(0);
   expect(link.strokeRightWeight).toBe(0);
   expect(link.strokeLeftWeight).toBe(0);
+});
+
+test('applies dotted underline decoration to mixed text ranges', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('p.lede', {
+        width: 260,
+        height: 64,
+        characters: 'Learn HTML and CSS',
+        fontName: { family: 'Georgia', style: 'Italic' },
+        fontSize: 20,
+        lineHeight: { unit: 'PIXELS', value: 32 },
+        textRuns: [
+          {
+            text: 'HTML',
+            fontName: { family: 'Georgia', style: 'Italic' },
+            fontSize: 20,
+            lineHeight: { unit: 'PIXELS', value: 32 },
+            fills: [{ type: 'SOLID', color: { r: 100 / 255, g: 216 / 255, b: 1 }, opacity: 1 }],
+            textDecoration: 'UNDERLINE',
+            textDecorationStyle: 'DOTTED',
+            textDecorationColor: {
+              value: {
+                type: 'SOLID',
+                color: { r: 100 / 255, g: 216 / 255, b: 1 },
+                opacity: 1,
+              },
+            },
+          },
+        ],
+      }),
+    ],
+  });
+
+  const text = page.children[0];
+  expect(text.rangeTextDecorations).toEqual([{ start: 6, end: 10, value: 'UNDERLINE' }]);
+  expect(text.rangeTextDecorationStyles).toEqual([{ start: 6, end: 10, value: 'DOTTED' }]);
+  expect(text.rangeTextDecorationColors).toEqual([{
+    start: 6,
+    end: 10,
+    value: {
+      value: {
+        type: 'SOLID',
+        color: { r: 100 / 255, g: 216 / 255, b: 1 },
+        opacity: 1,
+      },
+    },
+  }]);
 });
 
 test('extends page-layout height when fixed header content is offset down', async () => {

@@ -378,7 +378,35 @@ function escapeHtmlAttribute(value) {
 function walkDOMInBrowser() {
   const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'HEAD', 'NOSCRIPT']);
   const TEXT_TAGS = new Set(['p', 'span', 'a', 'label', 'em', 'strong', 'b', 'i', 'small', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th']);
-  const INLINE_TAGS = new Set(['span', 'a', 'label', 'em', 'strong', 'b', 'i', 'small', 'mark', 'sup', 'sub', 'u', 's', 'code', 'br', 'wbr']);
+  const INLINE_TAGS = new Set([
+    'a',
+    'abbr',
+    'b',
+    'bdi',
+    'bdo',
+    'cite',
+    'code',
+    'data',
+    'dfn',
+    'em',
+    'i',
+    'kbd',
+    'label',
+    'mark',
+    'q',
+    's',
+    'samp',
+    'small',
+    'span',
+    'strong',
+    'sub',
+    'sup',
+    'time',
+    'u',
+    'var',
+    'br',
+    'wbr',
+  ]);
   const TEXT_INPUT_TYPES = new Set([
     '',
     'date',
@@ -628,6 +656,10 @@ function walkDOMInBrowser() {
       whiteSpace: cs.whiteSpace,
       textOverflow: cs.textOverflow,
       textDecoration: cs.textDecoration,
+      textDecorationLine: cs.textDecorationLine,
+      textDecorationStyle: cs.textDecorationStyle,
+      textDecorationColor: cs.textDecorationColor,
+      textDecorationThickness: cs.textDecorationThickness,
       webkitTextStrokeWidth: cs.webkitTextStrokeWidth,
       webkitTextStrokeColor: cs.webkitTextStrokeColor,
       // Positioning
@@ -759,6 +791,10 @@ function walkDOMInBrowser() {
       color: cs.color,
       opacity: cs.opacity,
       textDecoration: cs.textDecoration,
+      textDecorationLine: cs.textDecorationLine,
+      textDecorationStyle: cs.textDecorationStyle,
+      textDecorationColor: cs.textDecorationColor,
+      textDecorationThickness: cs.textDecorationThickness,
       webkitTextStrokeWidth: cs.webkitTextStrokeWidth,
       webkitTextStrokeColor: cs.webkitTextStrokeColor,
     };
@@ -1055,7 +1091,7 @@ function walkDOMInBrowser() {
     }
 
     const parentRect = el.getBoundingClientRect();
-    const rect = estimatePseudoTextRect(parentRect, parentStyles, pseudoStyles, pseudoType);
+    const rect = estimatePseudoTextRect(parentRect, parentStyles, pseudoStyles, pseudoType, content);
     const transformedRect = applyPseudoTransformRect(rect, pseudoStyles.transform);
     const finalRect = transformedRect || rect;
 
@@ -1104,24 +1140,81 @@ function walkDOMInBrowser() {
       cs.boxShadow !== 'none';
   }
 
-  function estimatePseudoTextRect(parentRect, parentStyles, pseudoStyles, pseudoType) {
-    const width = parseCssPx(pseudoStyles.width);
-    const height = parseCssPx(pseudoStyles.height) || parseCssPx(pseudoStyles.lineHeight) || parseCssPx(pseudoStyles.fontSize);
+  function estimatePseudoTextRect(parentRect, parentStyles, pseudoStyles, pseudoType, content = '') {
+    const metrics = content ? measurePseudoTextMetrics(content, pseudoStyles) : null;
+    const width = Math.max(parseCssPx(pseudoStyles.width), metrics?.width || 0);
+    const height = Math.max(
+      parseCssPx(pseudoStyles.height) || parseCssPx(pseudoStyles.lineHeight) || parseCssPx(pseudoStyles.fontSize),
+      metrics?.height || 0
+    );
     const position = pseudoStyles.position;
 
     if (position === 'absolute' || position === 'fixed') {
-      return estimatePositionedPseudoRect(parentRect, pseudoStyles, width, height);
+      return expandRectForTextMetrics(estimatePositionedPseudoRect(parentRect, pseudoStyles, width, height), metrics);
     }
 
     if (parentStyles.display === 'flex' || parentStyles.display === 'inline-flex') {
-      return estimateFlexPseudoRect(parentRect, parentStyles, width, height, pseudoType);
+      return expandRectForTextMetrics(estimateFlexPseudoRect(parentRect, parentStyles, width, height, pseudoType), metrics);
     }
 
-    return {
+    return expandRectForTextMetrics({
       x: pseudoType === 'before' ? parentRect.x : parentRect.right - width,
       y: parentRect.y + Math.max((parentRect.height - height) / 2, 0),
       width,
       height,
+    }, metrics);
+  }
+
+  function measurePseudoTextMetrics(content, pseudoStyles) {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return null;
+      }
+
+      ctx.font = [
+        pseudoStyles.fontStyle,
+        pseudoStyles.fontVariant,
+        pseudoStyles.fontWeight,
+        pseudoStyles.fontSize,
+        pseudoStyles.fontFamily,
+      ].filter(Boolean).join(' ');
+
+      const metrics = ctx.measureText(content);
+      const left = Number.isFinite(metrics.actualBoundingBoxLeft) ? metrics.actualBoundingBoxLeft : 0;
+      const right = Number.isFinite(metrics.actualBoundingBoxRight) ? metrics.actualBoundingBoxRight : metrics.width;
+      const ascent = Number.isFinite(metrics.actualBoundingBoxAscent) ? metrics.actualBoundingBoxAscent : 0;
+      const descent = Number.isFinite(metrics.actualBoundingBoxDescent) ? metrics.actualBoundingBoxDescent : 0;
+
+      return {
+        width: Math.max(metrics.width || 0, Math.abs(left) + Math.abs(right)),
+        height: Math.max(parseCssPx(pseudoStyles.lineHeight), Math.abs(ascent) + Math.abs(descent)),
+        leftOverflow: Math.max(left, 0),
+        rightOverflow: Math.max(right - (metrics.width || 0), 0),
+        topOverflow: Math.max(ascent - parseCssPx(pseudoStyles.lineHeight), 0),
+        bottomOverflow: Math.max(descent, 0),
+      };
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function expandRectForTextMetrics(rect, metrics) {
+    if (!metrics) {
+      return rect;
+    }
+
+    const leftOverflow = metrics.leftOverflow || 0;
+    const rightOverflow = metrics.rightOverflow || 0;
+    const topOverflow = metrics.topOverflow || 0;
+    const bottomOverflow = metrics.bottomOverflow || 0;
+
+    return {
+      x: rect.x - leftOverflow,
+      y: rect.y - topOverflow,
+      width: Math.max(rect.width + leftOverflow + rightOverflow, metrics.width),
+      height: Math.max(rect.height + topOverflow + bottomOverflow, metrics.height),
     };
   }
 

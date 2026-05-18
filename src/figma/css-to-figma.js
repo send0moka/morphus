@@ -468,6 +468,7 @@ export function mapTypography(computed, fontMap = {}, parentComputed = null) {
     fills: isTransparentCssColor(computed.color)
       ? []
       : [solidPaint(computed.color)],
+    ...mapTextDecoration(computed),
   };
 
   if (shouldTruncateText(computed, parentComputed)) {
@@ -475,6 +476,78 @@ export function mapTypography(computed, fontMap = {}, parentComputed = null) {
   }
 
   return result;
+}
+
+function mapTextDecoration(computed = {}) {
+  const line = String(computed.textDecorationLine || computed.textDecoration || '').toLowerCase();
+  const hasUnderline = line.includes('underline');
+  const hasStrikethrough = line.includes('line-through');
+  if (!hasUnderline && !hasStrikethrough) {
+    return {};
+  }
+
+  const result = {
+    textDecoration: hasUnderline ? 'UNDERLINE' : 'STRIKETHROUGH',
+  };
+
+  const style = mapTextDecorationStyle(computed.textDecorationStyle || computed.textDecoration);
+  if (style) {
+    result.textDecorationStyle = style;
+  }
+
+  const color = mapTextDecorationColor(computed.textDecorationColor);
+  if (color) {
+    result.textDecorationColor = color;
+  }
+
+  const thickness = mapTextDecorationThickness(computed.textDecorationThickness);
+  if (thickness) {
+    result.textDecorationThickness = thickness;
+  }
+
+  return result;
+}
+
+function mapTextDecorationStyle(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized.includes('dotted')) return 'DOTTED';
+  if (normalized.includes('wavy')) return 'WAVY';
+  if (normalized.includes('solid')) return 'SOLID';
+  return null;
+}
+
+function mapTextDecorationColor(value) {
+  if (!value || value === 'currentcolor' || value === 'currentColor') {
+    return null;
+  }
+
+  const color = cssColorToFigma(value);
+  if (color.a === 0) {
+    return null;
+  }
+
+  return {
+    value: {
+      type: 'SOLID',
+      color: { r: color.r, g: color.g, b: color.b },
+      opacity: color.a,
+    },
+  };
+}
+
+function mapTextDecorationThickness(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'auto' || raw === 'from-font') {
+    return null;
+  }
+
+  if (raw.endsWith('%')) {
+    const percent = parseFloat(raw);
+    return Number.isFinite(percent) ? { value: percent, unit: 'PERCENT' } : null;
+  }
+
+  const px = parsePx(raw);
+  return px > 0 ? { value: px, unit: 'PIXELS' } : null;
 }
 
 /**

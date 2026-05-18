@@ -3,8 +3,8 @@
  * Figma Plugin main thread - receives HTML or JSON and creates Figma nodes.
  */
 
-// const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
-const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
+const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
+// const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 
 figma.showUI(__html__, { width: 420, height: 450 });
@@ -1786,6 +1786,7 @@ function applyBaseTextProps(text, spec) {
   if (spec.textAlignHorizontal) text.textAlignHorizontal = spec.textAlignHorizontal;
   if (spec.textAlignVertical) text.textAlignVertical = spec.textAlignVertical;
   if (spec.textCase) text.textCase = spec.textCase;
+  applyTextDecorationProps(text, spec);
   if (spec.strokes) {
     text.strokes = spec.strokes;
     text.strokeWeight = spec.strokeWeight || 1;
@@ -1826,6 +1827,39 @@ function applyTextRunStyles(text, runs) {
     if (run.textCase) {
       try { text.setRangeTextCase(start, end, run.textCase); } catch (err) {}
     }
+    applyRangeTextDecorationProps(text, start, end, run);
+  }
+}
+
+function applyTextDecorationProps(text, spec) {
+  if (!text || !spec) return;
+  if (spec.textDecoration) {
+    try { text.textDecoration = spec.textDecoration; } catch (err) {}
+  }
+  if (spec.textDecorationStyle) {
+    try { text.textDecorationStyle = spec.textDecorationStyle; } catch (err) {}
+  }
+  if (spec.textDecorationColor) {
+    try { text.textDecorationColor = spec.textDecorationColor; } catch (err) {}
+  }
+  if (spec.textDecorationThickness) {
+    try { text.textDecorationThickness = spec.textDecorationThickness; } catch (err) {}
+  }
+}
+
+function applyRangeTextDecorationProps(text, start, end, run) {
+  if (!text || !run || end <= start) return;
+  if (run.textDecoration) {
+    try { text.setRangeTextDecoration(start, end, run.textDecoration); } catch (err) {}
+  }
+  if (run.textDecorationStyle) {
+    try { text.setRangeTextDecorationStyle(start, end, run.textDecorationStyle); } catch (err) {}
+  }
+  if (run.textDecorationColor) {
+    try { text.setRangeTextDecorationColor(start, end, run.textDecorationColor); } catch (err) {}
+  }
+  if (run.textDecorationThickness) {
+    try { text.setRangeTextDecorationThickness(start, end, run.textDecorationThickness); } catch (err) {}
   }
 }
 

@@ -139,6 +139,46 @@ test('preserves structured interactive children instead of collapsing them into 
   expect(btnGhost.computed.display).toBe('flex');
 }, 30000);
 
+test('collapses semantic inline phrasing content into one text container', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; font-family: Georgia, serif; }
+      p { width: 420px; font-size: 20px; line-height: 32px; color: rgb(153, 153, 153); }
+      abbr { color: rgb(100, 216, 255); text-decoration: underline dotted; }
+      time { color: rgb(200, 255, 0); }
+    </style>
+    <p class="lede">
+      Satu halaman. Semua elemen <abbr>HTML</abbr> dan properti <abbr>CSS</abbr>
+      ditampilkan pada <time datetime="2026-05-18">hari ini</time>.
+    </p>
+  `, {
+    width: 520,
+    height: 180,
+  });
+
+  const lede = find(domTree, (node) => node.classList?.includes('lede'));
+
+  expect(lede).toBeTruthy();
+  expect(lede.isTextContainer).toBe(true);
+  expect(lede.children).toHaveLength(0);
+  expect(lede.text).toContain('HTML');
+  expect(lede.text).toContain('CSS');
+  expect(lede.text).toContain('hari ini');
+  expect(lede.textRuns.map((run) => run.text.trim()).filter(Boolean)).toEqual([
+    'Satu halaman. Semua elemen',
+    'HTML',
+    'dan properti',
+    'CSS',
+    'ditampilkan pada',
+    'hari ini',
+    '.',
+  ]);
+  const htmlRun = lede.textRuns.find((run) => run.text.trim() === 'HTML');
+  expect(htmlRun.computed.textDecorationLine).toContain('underline');
+  expect(htmlRun.computed.textDecorationStyle).toBe('dotted');
+  expect(htmlRun.computed.textDecorationColor).toBe('rgb(100, 216, 255)');
+}, 30000);
+
 test('clips paginated table rows after the pager so the table height stays bounded', async () => {
   const { domTree } = await extractFromHtml(`
     <style>
@@ -324,6 +364,43 @@ test('skips pseudo-elements collapsed in the default state', async () => {
   expect(visibleLink).toBeTruthy();
   expect(visibleLink.pseudo.after).toBeTruthy();
   expect(visibleLink.pseudo.after.rect.width).toBeGreaterThan(0);
+}, 30000);
+
+test('expands pseudo text bounds for glyph overhangs', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; }
+      blockquote {
+        position: relative;
+        width: 420px;
+        min-height: 120px;
+        margin: 32px;
+        font-family: Georgia, serif;
+      }
+      blockquote::before {
+        content: '“';
+        position: absolute;
+        left: 12px;
+        top: -16px;
+        font-family: Georgia, serif;
+        font-style: italic;
+        font-size: 80px;
+        line-height: 80px;
+        color: rgb(200, 255, 0);
+      }
+    </style>
+    <blockquote>Quote content</blockquote>
+  `, {
+    width: 520,
+    height: 220,
+  });
+
+  const quote = find(domTree, (node) => node.tag === 'blockquote');
+  const before = quote?.pseudo?.before;
+
+  expect(before).toBeTruthy();
+  expect(before.content).toBe('“');
+  expect(before.rect.width).toBeGreaterThan(parseFloat(before.computed.width));
 }, 30000);
 
 test('captures inline svg markup for native import', async () => {
