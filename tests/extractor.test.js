@@ -179,6 +179,58 @@ test('collapses semantic inline phrasing content into one text container', async
   expect(htmlRun.computed.textDecorationColor).toBe('rgb(100, 216, 255)');
 }, 30000);
 
+test('splits wrapped inline visual boxes into painted line fragments', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; }
+      p { width: 190px; font-size: 20px; line-height: 30px; color: rgb(40, 40, 40); }
+      mark {
+        background: rgb(255, 225, 0);
+        color: rgb(10, 10, 10);
+        padding: 0 4px;
+        border-radius: 2px;
+      }
+    </style>
+    <p>Awal teks <mark>Ditandai dengan mark</mark> akhir</p>
+  `, {
+    width: 260,
+    height: 180,
+  });
+
+  const mark = find(domTree, (node) => node.tag === 'mark' && node._inlineFragmentGroup);
+
+  expect(mark).toBeTruthy();
+  expect(mark.computed.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+
+  const fragments = mark.children.filter((child) => child._inlineFragment);
+  expect(fragments.length).toBeGreaterThan(1);
+  expect(fragments.every((fragment) => fragment.computed.backgroundColor === 'rgb(255, 225, 0)')).toBe(true);
+  expect(Math.max(...fragments.map((fragment) => fragment.rect.width))).toBeLessThan(mark.rect.width);
+  expect(fragments.map((fragment) => fragment.children[0]?.text).filter(Boolean).join(' ')).toBe('Ditandai dengan mark');
+}, 30000);
+
+test('splits wrapped inline text into separate line fragments', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; }
+      p { width: 60px; font-size: 20px; line-height: 30px; }
+      i { font-style: italic; }
+      mark { background: yellow; }
+    </style>
+    <p><mark>x</mark> <i>italic (i)</i></p>
+  `, {
+    width: 180,
+    height: 120,
+  });
+
+  const italic = find(domTree, (node) => node.tag === 'i' && node._inlineTextFragmentGroup);
+
+  expect(italic).toBeTruthy();
+  expect(italic.children.map((child) => child.text)).toEqual(['italic', '(i)']);
+  expect(italic.children.every((child) => child.isTextContainer && child._inlineTextFragment)).toBe(true);
+  expect(Math.max(...italic.children.map((child) => child.rect.width))).toBeLessThan(italic.rect.width);
+}, 30000);
+
 test('clips paginated table rows after the pager so the table height stays bounded', async () => {
   const { domTree } = await extractFromHtml(`
     <style>

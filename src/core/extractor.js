@@ -453,6 +453,17 @@ function walkDOMInBrowser() {
       parseFloat(cs.paddingBottom) > 0 ||
       parseFloat(cs.paddingLeft) > 0 ||
       cs.boxShadow !== 'none';
+
+    const inlineVisualFragments = extractInlineVisualFragments(el, tag, cs, csBefore, csAfter, rect, rawText, hasVisualBox);
+    if (inlineVisualFragments) {
+      return inlineVisualFragments;
+    }
+
+    const inlineTextFragments = extractInlineTextFragments(el, tag, cs, csBefore, csAfter, rect, rawText, hasVisualBox);
+    if (inlineTextFragments) {
+      return inlineTextFragments;
+    }
+
     const hasOnlyInlineTextChildren = Boolean(rawText) && Array.from(el.children).length > 0 && Array.from(el.children).every((child) => isInlineTextChild(child));
     const isTextContainer = Boolean(rawText)
       && !hasVisualBox
@@ -495,6 +506,437 @@ function walkDOMInBrowser() {
         after: afterData,
       },
       children,
+    };
+  }
+
+  function extractInlineVisualFragments(el, tag, cs, csBefore, csAfter, rect, rawText, hasVisualBox) {
+    if (!shouldSplitInlineVisualElement(el, tag, cs, csBefore, csAfter, rawText, hasVisualBox)) {
+      return null;
+    }
+
+    const fragmentRects = getElementClientRects(el);
+    if (fragmentRects.length <= 1) {
+      return null;
+    }
+
+    const lines = collectInlineVisualTextLines(el, fragmentRects);
+    if (!lines.some((line) => line.text)) {
+      return null;
+    }
+
+    const wrapperComputed = makeTransparentInlineWrapperStyles(cs, rect);
+    const fragmentNodes = fragmentRects
+      .map((fragmentRect, index) => buildInlineVisualFragmentNode(el, tag, cs, fragmentRect, lines[index]))
+      .filter(Boolean);
+
+    if (fragmentNodes.length <= 1) {
+      return null;
+    }
+
+    return {
+      tag,
+      id: el.id || null,
+      classList: Array.from(el.classList),
+      text: null,
+      textRuns: [],
+      isTextContainer: false,
+      _inlineFragmentGroup: true,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      computed: wrapperComputed,
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children: fragmentNodes,
+    };
+  }
+
+  function extractInlineTextFragments(el, tag, cs, csBefore, csAfter, rect, rawText, hasVisualBox) {
+    if (!shouldSplitInlineTextElement(el, tag, cs, csBefore, csAfter, rawText, hasVisualBox)) {
+      return null;
+    }
+
+    const fragmentRects = getElementClientRects(el);
+    if (fragmentRects.length <= 1) {
+      return null;
+    }
+
+    const lines = collectInlineVisualTextLines(el, fragmentRects);
+    const fragmentNodes = lines
+      .map((line) => buildInlineTextFragmentNode(el, cs, line))
+      .filter(Boolean);
+
+    if (fragmentNodes.length <= 1) {
+      return null;
+    }
+
+    return {
+      tag,
+      id: el.id || null,
+      classList: Array.from(el.classList),
+      text: null,
+      textRuns: [],
+      isTextContainer: false,
+      _inlineTextFragmentGroup: true,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      computed: makeTransparentInlineWrapperStyles(cs, rect),
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children: fragmentNodes,
+    };
+  }
+
+  function shouldSplitInlineTextElement(el, tag, cs, csBefore, csAfter, rawText, hasVisualBox) {
+    if (hasVisualBox || !rawText || !INLINE_TAGS.has(tag)) {
+      return false;
+    }
+
+    if (cs.display !== 'inline' || cs.position !== 'static') {
+      return false;
+    }
+
+    if (hasRenderablePseudo(csBefore) || hasRenderablePseudo(csAfter)) {
+      return false;
+    }
+
+    return getElementClientRects(el).length > 1;
+  }
+
+  function buildInlineTextFragmentNode(el, cs, line) {
+    if (!line?.text || !line.textRect) {
+      return null;
+    }
+
+    const computed = extractRelevantStyles(cs);
+    computed.display = 'inline';
+    computed.position = 'static';
+    computed.width = `${line.textRect.width}px`;
+    computed.height = `${line.textRect.height}px`;
+    computed.minWidth = '0px';
+    computed.minHeight = '0px';
+
+    return {
+      tag: el.tagName.toLowerCase(),
+      id: null,
+      classList: Array.from(el.classList),
+      text: line.text,
+      textRuns: line.runs,
+      isTextContainer: true,
+      _inlineTextFragment: true,
+      rect: line.textRect,
+      computed,
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children: [],
+    };
+  }
+
+  function shouldSplitInlineVisualElement(el, tag, cs, csBefore, csAfter, rawText, hasVisualBox) {
+    if (!hasVisualBox || !rawText || !INLINE_TAGS.has(tag)) {
+      return false;
+    }
+
+    if (cs.display !== 'inline' || cs.position !== 'static') {
+      return false;
+    }
+
+    if (hasRenderablePseudo(csBefore) || hasRenderablePseudo(csAfter)) {
+      return false;
+    }
+
+    return getElementClientRects(el).length > 1;
+  }
+
+  function getElementClientRects(el) {
+    return Array.from(el.getClientRects())
+      .map(rectToPlainObject)
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function buildInlineVisualFragmentNode(el, tag, cs, fragmentRect, line) {
+    const computed = extractRelevantStyles(cs);
+    computed.display = 'inline';
+    computed.position = 'static';
+    computed.width = `${fragmentRect.width}px`;
+    computed.height = `${fragmentRect.height}px`;
+    computed.minWidth = '0px';
+    computed.minHeight = '0px';
+
+    const textNode = line?.text
+      ? buildInlineFragmentTextNode(cs, line)
+      : null;
+
+    return {
+      tag,
+      id: null,
+      classList: Array.from(el.classList),
+      text: null,
+      textRuns: [],
+      isTextContainer: false,
+      _inlineFragment: true,
+      rect: fragmentRect,
+      computed,
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children: textNode ? [textNode] : [],
+    };
+  }
+
+  function buildInlineFragmentTextNode(cs, line) {
+    const computed = extractRelevantStyles(cs);
+    computed.display = 'inline';
+    computed.position = 'static';
+    computed.width = `${line.textRect.width}px`;
+    computed.height = `${line.textRect.height}px`;
+    computed.minWidth = '0px';
+    computed.minHeight = '0px';
+    computed.backgroundColor = 'rgba(0, 0, 0, 0)';
+    computed.backgroundImage = 'none';
+    computed.paddingTop = '0px';
+    computed.paddingRight = '0px';
+    computed.paddingBottom = '0px';
+    computed.paddingLeft = '0px';
+    computed.border = '0px none rgba(0, 0, 0, 0)';
+    computed.borderWidth = '0px';
+    computed.borderStyle = 'none';
+    computed.boxShadow = 'none';
+
+    return {
+      tag: 'span',
+      id: null,
+      classList: [],
+      text: line.text,
+      textRuns: line.runs,
+      isTextContainer: true,
+      _inlineFragmentText: true,
+      rect: line.textRect,
+      computed,
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children: [],
+    };
+  }
+
+  function collectInlineVisualTextLines(el, fragmentRects) {
+    const lines = fragmentRects.map((fragmentRect) => ({
+      fragmentRect,
+      text: '',
+      runs: [],
+      textRect: null,
+    }));
+    let pendingWhitespace = false;
+    let previousLineIndex = null;
+
+    function walkInlineText(node, styleEl) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        collectTextNodeLines(node, styleEl);
+        return;
+      }
+
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return;
+      }
+
+      const element = node;
+      if (element.tagName.toLowerCase() === 'br') {
+        pendingWhitespace = false;
+        previousLineIndex = null;
+        return;
+      }
+
+      for (const child of element.childNodes) {
+        walkInlineText(child, element);
+      }
+    }
+
+    function collectTextNodeLines(textNode, styleEl) {
+      const text = textNode.textContent || '';
+      const tokenPattern = /\s+|\S+/g;
+      let match;
+
+      while ((match = tokenPattern.exec(text)) !== null) {
+        const token = match[0];
+        if (/^\s+$/.test(token)) {
+          pendingWhitespace = true;
+          continue;
+        }
+
+        appendMeasuredToken(textNode, match.index, match.index + token.length, token, styleEl);
+      }
+    }
+
+    function appendMeasuredToken(textNode, start, end, token, styleEl) {
+      const tokenRects = measureTextRangeClientRects(textNode, start, end);
+      if (tokenRects.length <= 1) {
+        const rect = tokenRects[0];
+        if (!rect) return;
+        appendLineText(findBestFragmentIndex(rect, fragmentRects), token, rect, styleEl);
+        return;
+      }
+
+      let segment = '';
+      let segmentLineIndex = null;
+      let segmentRect = null;
+
+      for (let offset = start; offset < end; offset++) {
+        const char = (textNode.textContent || '').slice(offset, offset + 1);
+        const charRect = measureTextRangeClientRects(textNode, offset, offset + 1)[0];
+        if (!charRect) continue;
+
+        const lineIndex = findBestFragmentIndex(charRect, fragmentRects);
+        if (segment && lineIndex !== segmentLineIndex) {
+          appendLineText(segmentLineIndex, segment, segmentRect, styleEl);
+          segment = '';
+          segmentRect = null;
+        }
+
+        segment += char;
+        segmentLineIndex = lineIndex;
+        segmentRect = unionTwoRects(segmentRect, charRect);
+      }
+
+      if (segment) {
+        appendLineText(segmentLineIndex, segment, segmentRect, styleEl);
+      }
+    }
+
+    function appendLineText(lineIndex, rawToken, rect, styleEl) {
+      const line = lines[lineIndex];
+      if (!line || !rawToken || !rect) {
+        return;
+      }
+
+      const normalizedToken = normalizeTextFragment(rawToken);
+      if (!normalizedToken) {
+        return;
+      }
+
+      const prefix = pendingWhitespace && previousLineIndex === lineIndex && line.text ? ' ' : '';
+      const text = prefix + normalizedToken;
+      line.text += text;
+      line.runs.push({
+        text,
+        lineIndex: 0,
+        computed: extractTextRunStyles(window.getComputedStyle(styleEl || el)),
+      });
+      line.textRect = unionTwoRects(line.textRect, rect);
+      pendingWhitespace = false;
+      previousLineIndex = lineIndex;
+    }
+
+    for (const child of el.childNodes) {
+      walkInlineText(child, el);
+    }
+
+    for (const line of lines) {
+      if (!line.textRect) {
+        line.textRect = line.fragmentRect;
+      }
+      line.text = normalizeTextContent(line.text);
+    }
+
+    return lines;
+  }
+
+  function measureTextRangeClientRects(textNode, start, end) {
+    const range = document.createRange();
+    range.setStart(textNode, start);
+    range.setEnd(textNode, end);
+    return Array.from(range.getClientRects())
+      .map(rectToPlainObject)
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function findBestFragmentIndex(rect, fragmentRects) {
+    let bestIndex = 0;
+    let bestScore = -1;
+    const centerY = rect.y + rect.height / 2;
+
+    for (let index = 0; index < fragmentRects.length; index++) {
+      const fragment = fragmentRects[index];
+      const overlapX = Math.max(0, Math.min(rect.x + rect.width, fragment.x + fragment.width) - Math.max(rect.x, fragment.x));
+      const overlapY = Math.max(0, Math.min(rect.y + rect.height, fragment.y + fragment.height) - Math.max(rect.y, fragment.y));
+      const area = overlapX * overlapY;
+      const yDistance = Math.abs(centerY - (fragment.y + fragment.height / 2));
+      const score = area > 0 ? area : -yDistance;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    }
+
+    return bestIndex;
+  }
+
+  function makeTransparentInlineWrapperStyles(cs, rect) {
+    const computed = extractRelevantStyles(cs);
+    computed.display = 'inline';
+    computed.position = 'static';
+    computed.width = `${rect.width}px`;
+    computed.height = `${rect.height}px`;
+    computed.minWidth = '0px';
+    computed.minHeight = '0px';
+    computed.paddingTop = '0px';
+    computed.paddingRight = '0px';
+    computed.paddingBottom = '0px';
+    computed.paddingLeft = '0px';
+    computed.backgroundColor = 'rgba(0, 0, 0, 0)';
+    computed.backgroundImage = 'none';
+    computed.borderRadius = '0px';
+    computed.borderTopLeftRadius = '0px';
+    computed.borderTopRightRadius = '0px';
+    computed.borderBottomRightRadius = '0px';
+    computed.borderBottomLeftRadius = '0px';
+    computed.border = '0px none rgba(0, 0, 0, 0)';
+    computed.borderWidth = '0px';
+    computed.borderColor = 'rgba(0, 0, 0, 0)';
+    computed.borderStyle = 'none';
+    computed.borderTopWidth = '0px';
+    computed.borderRightWidth = '0px';
+    computed.borderBottomWidth = '0px';
+    computed.borderLeftWidth = '0px';
+    computed.borderTopColor = 'rgba(0, 0, 0, 0)';
+    computed.borderRightColor = 'rgba(0, 0, 0, 0)';
+    computed.borderBottomColor = 'rgba(0, 0, 0, 0)';
+    computed.borderLeftColor = 'rgba(0, 0, 0, 0)';
+    computed.borderTopStyle = 'none';
+    computed.borderRightStyle = 'none';
+    computed.borderBottomStyle = 'none';
+    computed.borderLeftStyle = 'none';
+    computed.boxShadow = 'none';
+    return computed;
+  }
+
+  function rectToPlainObject(rect) {
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function unionTwoRects(a, b) {
+    if (!a) return b ? { x: b.x, y: b.y, width: b.width, height: b.height } : null;
+    if (!b) return { x: a.x, y: a.y, width: a.width, height: a.height };
+
+    const left = Math.min(a.x, b.x);
+    const top = Math.min(a.y, b.y);
+    const right = Math.max(a.x + a.width, b.x + b.width);
+    const bottom = Math.max(a.y + a.height, b.y + b.height);
+    return {
+      x: left,
+      y: top,
+      width: Math.max(right - left, 0),
+      height: Math.max(bottom - top, 0),
     };
   }
 
