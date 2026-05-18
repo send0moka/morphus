@@ -1450,7 +1450,13 @@ function cloneValue(value) {
 
 // Node builder
 
+let lastYieldTime = Date.now();
+
 async function buildNode(spec, parentLayoutMode, styleRegistry) {
+  if (Date.now() - lastYieldTime > 35) {
+    await new Promise(resolve => setTimeout(resolve, 1));
+    lastYieldTime = Date.now();
+  }
   if (spec.type === 'IMAGE' || spec._image) {
     return await buildImageNode(spec, parentLayoutMode, styleRegistry);
   }

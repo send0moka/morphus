@@ -492,11 +492,29 @@
       overflow: hidden;
     }
 
+    @keyframes progress-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
     .progress > div {
       width: 0%;
       height: 100%;
-      background: var(--accent);
+      background: linear-gradient(90deg, 
+        var(--accent) 0%, 
+        rgba(255, 255, 255, 0.3) 25%, 
+        var(--accent) 50%, 
+        rgba(255, 255, 255, 0.3) 75%, 
+        var(--accent) 100%
+      );
+      background-size: 200% 100%;
+      animation: progress-shimmer 2.5s linear infinite;
       transition: width 0.2s linear;
+    }
+
+    .progress > div.complete {
+      background: var(--accent);
+      animation: none;
     }
 
     #status {
@@ -682,6 +700,38 @@
       selectedFile: null,
     };
 
+    let currentRealProgress = 0;
+    let currentVisualProgress = 0;
+    let progressInterval = null;
+
+    function startFakeProgress() {
+      currentRealProgress = 0;
+      currentVisualProgress = 0;
+      progressFill.classList.remove('complete');
+      progressFill.style.width = '0%';
+      if (progressInterval) clearInterval(progressInterval);
+      progressInterval = setInterval(() => {
+        if (currentVisualProgress < currentRealProgress) {
+          currentVisualProgress += (currentRealProgress - currentVisualProgress) * 0.5;
+          if (currentRealProgress - currentVisualProgress < 0.5) {
+            currentVisualProgress = currentRealProgress;
+          }
+        } else if (currentVisualProgress < 99) {
+          const remaining = 99 - currentVisualProgress;
+          const step = Math.max(remaining * 0.004, 0.04);
+          currentVisualProgress = Math.min(99, currentVisualProgress + step);
+        }
+        progressFill.style.width = `${currentVisualProgress}%`;
+      }, 100);
+    }
+
+    function stopFakeProgress() {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+    }
+
     benchmarkBtn.addEventListener('click', () => {
       parent.postMessage({
         pluginMessage: { type: 'OPEN_BENCHMARK' },
@@ -853,7 +903,7 @@
       };
 
       buildBtn.disabled = true;
-      progressFill.style.width = '0%';
+      startFakeProgress();
       setStatus('Sending HTML to the converter...');
 
       parent.postMessage({
@@ -872,12 +922,14 @@
 
       if (msg.type === 'PROGRESS') {
         if (typeof msg.percent === 'number') {
-          progressFill.style.width = `${msg.percent}%`;
+          currentRealProgress = msg.percent;
         }
         setStatus(msg.text || 'Working...');
       }
 
       if (msg.type === 'DONE') {
+        stopFakeProgress();
+        progressFill.classList.add('complete');
         progressFill.style.width = '100%';
         const styleCount = msg.styles ? (Number(msg.styles.paint || 0) + Number(msg.styles.text || 0)) : 0;
         const styleText = styleCount > 0 ? ` and ${styleCount} local styles` : '';
@@ -887,6 +939,8 @@
       }
 
       if (msg.type === 'ERROR') {
+        stopFakeProgress();
+        progressFill.style.width = '0%';
         setStatus(msg.message || 'Something went wrong.', 'error');
         buildBtn.disabled = false;
       }
