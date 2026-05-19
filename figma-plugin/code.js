@@ -3,8 +3,8 @@
  * Figma Plugin main thread - receives HTML or JSON and creates Figma nodes.
  */
 
-const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
-// const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
+// const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
+const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 
 figma.showUI(__html__, { width: 420, height: 505 });
@@ -123,7 +123,7 @@ async function convertViewport(serverUrl, payload, viewport, onProgress) {
     try {
       const body = await response.json();
       if (body && body.error) message = body.error;
-    } catch (err) {}
+    } catch (err) { }
     throw new Error(message);
   }
 
@@ -268,7 +268,7 @@ async function ensureCurrentPageLoaded() {
 
   try {
     await figma.currentPage.loadAsync();
-  } catch (err) {}
+  } catch (err) { }
 }
 
 function progress(text, percent) {
@@ -477,7 +477,7 @@ async function loadBestAvailableFont(requested, availableByFamily) {
     try {
       await loadFontCached(candidates[index]);
       return candidates[index];
-    } catch (err) {}
+    } catch (err) { }
   }
 
   const fallback = { family: 'Inter', style: 'Regular' };
@@ -802,7 +802,7 @@ function pruneGeneratedStyles(localStyles, defs, styleNamespace = DEFAULT_STYLE_
       if (typeof style.remove === 'function') {
         style.remove();
       }
-    } catch (err) {}
+    } catch (err) { }
   }
 }
 
@@ -1281,7 +1281,7 @@ async function getLocalStylesSafe(kind) {
         return figma.getLocalTextStyles();
       }
     }
-  } catch (err) {}
+  } catch (err) { }
 
   return [];
 }
@@ -1328,7 +1328,7 @@ async function ensureTextStyle(def, localStyles, localStylesByName = null) {
     style.letterSpacing = cloneValue(def.letterSpacing);
     try {
       style.textCase = def.textCase || 'ORIGINAL';
-    } catch (err) {}
+    } catch (err) { }
     if ('description' in style) {
       style.description = def.description;
     }
@@ -1447,7 +1447,7 @@ async function setNodeFillStyleId(node, styleId) {
     } else {
       node.fillStyleId = styleId;
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function setNodeStrokeStyleId(node, styleId) {
@@ -1457,7 +1457,7 @@ async function setNodeStrokeStyleId(node, styleId) {
     } else {
       node.strokeStyleId = styleId;
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function setRangeTextStyleId(text, start, end, styleId) {
@@ -1469,7 +1469,7 @@ async function setRangeTextStyleId(text, start, end, styleId) {
     } else if (start === 0 && end === text.characters.length) {
       text.textStyleId = styleId;
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function setRangeFillStyleId(text, start, end, styleId) {
@@ -1481,7 +1481,7 @@ async function setRangeFillStyleId(text, start, end, styleId) {
     } else if (start === 0 && end === text.characters.length) {
       text.fillStyleId = styleId;
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 async function setRangeStrokeStyleId(text, start, end, styleId) {
@@ -1493,7 +1493,7 @@ async function setRangeStrokeStyleId(text, start, end, styleId) {
     } else if (start === 0 && end === text.characters.length) {
       text.strokeStyleId = styleId;
     }
-  } catch (err) {}
+  } catch (err) { }
 }
 
 function formatLineHeight(lineHeight) {
@@ -1612,7 +1612,7 @@ async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
   if (spec.rotation !== undefined) {
     try {
       frame.rotation = spec.rotation;
-    } catch (err) {}
+    } catch (err) { }
   }
   frame.resize(Math.max(spec.width || 1, 1), Math.max(spec.height || 1, 1));
   frame.fills = [];
@@ -1629,7 +1629,7 @@ async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
   if (spec.layoutPositioning) {
     try {
       frame.layoutPositioning = spec.layoutPositioning;
-    } catch (err) {}
+    } catch (err) { }
   }
   applyChildLayoutSizing(frame, spec);
   if (spec.clipsContent !== undefined) frame.clipsContent = spec.clipsContent;
@@ -1655,7 +1655,7 @@ async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
   if (spec.blendMode) {
     try {
       frame.blendMode = spec.blendMode;
-    } catch (err) {}
+    } catch (err) { }
   }
 
   return frame;
@@ -1788,7 +1788,7 @@ async function buildSvgNode(spec, parentLayoutMode, styleRegistry) {
     if (spec.rotation !== undefined) {
       try {
         node.rotation = spec.rotation;
-      } catch (err) {}
+      } catch (err) { }
     }
     resizeSceneNode(node, Math.max(spec.width || 1, 1), Math.max(spec.height || 1, 1));
 
@@ -1798,13 +1798,13 @@ async function buildSvgNode(spec, parentLayoutMode, styleRegistry) {
     if (spec.layoutPositioning) {
       try {
         node.layoutPositioning = spec.layoutPositioning;
-      } catch (err) {}
+      } catch (err) { }
     }
     applyChildLayoutSizing(node, spec);
     if (spec.blendMode) {
       try {
         node.blendMode = spec.blendMode;
-      } catch (err) {}
+      } catch (err) { }
     }
 
     return node;
@@ -1836,12 +1836,12 @@ function applyChildLayoutSizing(node, spec) {
   if (spec.layoutSizingHorizontal) {
     try {
       node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
-    } catch (err) {}
+    } catch (err) { }
   }
   if (spec.layoutSizingVertical) {
     try {
       node.layoutSizingVertical = spec.layoutSizingVertical;
-    } catch (err) {}
+    } catch (err) { }
   }
 }
 
@@ -1882,7 +1882,7 @@ async function buildMixedTextGroup(spec, styleRegistry) {
   if (spec.rotation !== undefined) {
     try {
       frame.rotation = spec.rotation;
-    } catch (err) {}
+    } catch (err) { }
   }
   frame.resize(Math.max(spec.width || 1, 1), Math.max(spec.height || 1, 1));
   frame.fills = [];
@@ -1965,13 +1965,13 @@ function applyBaseTextProps(text, spec) {
   if (spec.rotation !== undefined) {
     try {
       text.rotation = spec.rotation;
-    } catch (err) {}
+    } catch (err) { }
   }
 
   const fontName = spec.fontName || { family: 'Inter', style: 'Regular' };
   try {
     text.fontName = fontName;
-  } catch (err) {}
+  } catch (err) { }
 
   text.characters = spec.characters || '';
   if (spec.fontSize) text.fontSize = spec.fontSize;
@@ -1996,7 +1996,7 @@ function applyBaseTextProps(text, spec) {
       if (spec.textTruncation === 'ENDING') {
         text.maxLines = 1;
       }
-    } catch (err) {}
+    } catch (err) { }
   }
 }
 
@@ -2009,22 +2009,22 @@ function applyTextRunStyles(text, runs) {
     if (end <= start) continue;
 
     if (run.fontName) {
-      try { text.setRangeFontName(start, end, run.fontName); } catch (err) {}
+      try { text.setRangeFontName(start, end, run.fontName); } catch (err) { }
     }
     if (run.fontSize) {
-      try { text.setRangeFontSize(start, end, run.fontSize); } catch (err) {}
+      try { text.setRangeFontSize(start, end, run.fontSize); } catch (err) { }
     }
     if (run.fills) {
-      try { text.setRangeFills(start, end, run.fills); } catch (err) {}
+      try { text.setRangeFills(start, end, run.fills); } catch (err) { }
     }
     if (run.lineHeight) {
-      try { text.setRangeLineHeight(start, end, run.lineHeight); } catch (err) {}
+      try { text.setRangeLineHeight(start, end, run.lineHeight); } catch (err) { }
     }
     if (run.letterSpacing) {
-      try { text.setRangeLetterSpacing(start, end, run.letterSpacing); } catch (err) {}
+      try { text.setRangeLetterSpacing(start, end, run.letterSpacing); } catch (err) { }
     }
     if (run.textCase) {
-      try { text.setRangeTextCase(start, end, run.textCase); } catch (err) {}
+      try { text.setRangeTextCase(start, end, run.textCase); } catch (err) { }
     }
   }
 }
@@ -2032,16 +2032,16 @@ function applyTextRunStyles(text, runs) {
 function applyTextDecorationProps(text, spec) {
   if (!text || !spec) return;
   if (spec.textDecoration) {
-    try { text.textDecoration = spec.textDecoration; } catch (err) {}
+    try { text.textDecoration = spec.textDecoration; } catch (err) { }
   }
   if (spec.textDecorationStyle) {
-    try { text.textDecorationStyle = spec.textDecorationStyle; } catch (err) {}
+    try { text.textDecorationStyle = spec.textDecorationStyle; } catch (err) { }
   }
   if (spec.textDecorationColor) {
-    try { text.textDecorationColor = spec.textDecorationColor; } catch (err) {}
+    try { text.textDecorationColor = spec.textDecorationColor; } catch (err) { }
   }
   if (spec.textDecorationThickness) {
-    try { text.textDecorationThickness = spec.textDecorationThickness; } catch (err) {}
+    try { text.textDecorationThickness = spec.textDecorationThickness; } catch (err) { }
   }
 }
 
@@ -2060,16 +2060,16 @@ function applyTextDecorations(text, spec, runs) {
 function applyRangeTextDecorationProps(text, start, end, run) {
   if (!text || !run || end <= start) return;
   if (run.textDecoration) {
-    try { text.setRangeTextDecoration(start, end, run.textDecoration); } catch (err) {}
+    try { text.setRangeTextDecoration(start, end, run.textDecoration); } catch (err) { }
   }
   if (run.textDecorationStyle) {
-    try { text.setRangeTextDecorationStyle(start, end, run.textDecorationStyle); } catch (err) {}
+    try { text.setRangeTextDecorationStyle(start, end, run.textDecorationStyle); } catch (err) { }
   }
   if (run.textDecorationColor) {
-    try { text.setRangeTextDecorationColor(start, end, run.textDecorationColor); } catch (err) {}
+    try { text.setRangeTextDecorationColor(start, end, run.textDecorationColor); } catch (err) { }
   }
   if (run.textDecorationThickness) {
-    try { text.setRangeTextDecorationThickness(start, end, run.textDecorationThickness); } catch (err) {}
+    try { text.setRangeTextDecorationThickness(start, end, run.textDecorationThickness); } catch (err) { }
   }
 }
 
@@ -2121,7 +2121,7 @@ function applyTextSizing(text, spec, parentLayoutMode) {
 
     text.textAutoResize = 'HEIGHT';
     text.resize(Math.max(spec.width, 1), Math.max(spec.height || 1, 1));
-  } catch (err) {}
+  } catch (err) { }
 }
 
 function hasExplicitLineBreaks(characters) {
@@ -2240,7 +2240,7 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
   if (spec.rotation !== undefined) {
     try {
       frame.rotation = spec.rotation;
-    } catch (err) {}
+    } catch (err) { }
   }
 
   if (spec.fills && spec.fills.length > 0) frame.fills = spec.fills;
@@ -2262,12 +2262,12 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
     if (spec.layoutWrap) {
       try {
         frame.layoutWrap = spec.layoutWrap;
-      } catch (err) {}
+      } catch (err) { }
     }
     if (spec.counterAxisSpacing !== undefined) {
       try {
         frame.counterAxisSpacing = spec.counterAxisSpacing;
-      } catch (err) {}
+      } catch (err) { }
     }
   }
 
@@ -2298,7 +2298,7 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
   if (spec.blendMode) {
     try {
       frame.blendMode = spec.blendMode;
-    } catch (err) {}
+    } catch (err) { }
   }
   if (spec._backgroundPattern) {
     applyBackgroundPattern(frame, spec._backgroundPattern);
@@ -2316,7 +2316,7 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
       if (childSpec.layoutPositioning === 'ABSOLUTE' && frame.layoutMode !== 'NONE') {
         try {
           child.layoutPositioning = 'ABSOLUTE';
-        } catch (err) {}
+        } catch (err) { }
       }
     }
   }
@@ -2447,12 +2447,12 @@ function applyGridStrategy(frame, strategy) {
   if (strategy.layoutWrap) {
     try {
       frame.layoutWrap = strategy.layoutWrap;
-    } catch (err) {}
+    } catch (err) { }
   }
   if (strategy.counterAxisSpacing !== undefined) {
     try {
       frame.counterAxisSpacing = strategy.counterAxisSpacing;
-    } catch (err) {}
+    } catch (err) { }
   }
 }
 
@@ -2527,30 +2527,30 @@ function applySmartAutoLayoutSizing(frame, spec, strategy) {
   if (primaryMode) {
     try {
       frame.primaryAxisSizingMode = primaryMode;
-    } catch (err) {}
+    } catch (err) { }
     if (layoutMode === 'HORIZONTAL') {
       try {
         frame.layoutSizingHorizontal = primaryMode;
-      } catch (err) {}
+      } catch (err) { }
     } else if (layoutMode === 'VERTICAL') {
       try {
         frame.layoutSizingVertical = primaryMode;
-      } catch (err) {}
+      } catch (err) { }
     }
   }
 
   if (counterMode) {
     try {
       frame.counterAxisSizingMode = counterMode;
-    } catch (err) {}
+    } catch (err) { }
     if (layoutMode === 'HORIZONTAL') {
       try {
         frame.layoutSizingVertical = counterMode;
-      } catch (err) {}
+      } catch (err) { }
     } else if (layoutMode === 'VERTICAL') {
       try {
         frame.layoutSizingHorizontal = counterMode;
-      } catch (err) {}
+      } catch (err) { }
     }
   }
 
@@ -2560,7 +2560,7 @@ function applySmartAutoLayoutSizing(frame, spec, strategy) {
         Math.max(renderedWidth, 1),
         Math.max(renderedHeight, 1)
       );
-    } catch (err) {}
+    } catch (err) { }
   }
 
   applyChildLayoutSizing(frame, sourceSpec);
@@ -2760,7 +2760,7 @@ function copyNodeProp(source, target, prop) {
 
   try {
     target[prop] = source[prop];
-  } catch (err) {}
+  } catch (err) { }
 }
 
 function applyBackgroundPattern(frame, pattern) {
@@ -2779,7 +2779,7 @@ function applyBackgroundPattern(frame, pattern) {
   if (frame.layoutMode && frame.layoutMode !== 'NONE') {
     try {
       layer.layoutPositioning = 'ABSOLUTE';
-    } catch (err) {}
+    } catch (err) { }
   }
 
   const cellWidth = Math.max(pattern.cellWidth || 1, 1);
