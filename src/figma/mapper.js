@@ -19,8 +19,7 @@ import {
   mapTypography,
   mapTextStroke,
   shouldTruncateText,
-  parseLinearGradient,
-  parseLinearGradientLayers,
+  parseGradientLayers,
   splitCssLayers,
 } from './css-to-figma.js';
 import { cssColorToFigma, solidPaint as colorSolidPaint } from '../utils/color.js';
@@ -139,10 +138,10 @@ function buildNode(node, parentContext, ctx, path) {
   let fills = mapBackgroundColor(computed);
   const backgroundPattern = detectBackgroundPattern(computed);
 
-  // Handle linear-gradient in backgroundImage
-  if (!backgroundPattern && computed.backgroundImage && computed.backgroundImage.includes('linear-gradient')) {
+  // Handle supported CSS gradient layers in backgroundImage.
+  if (!backgroundPattern && computed.backgroundImage) {
     try {
-      fills.push(parseLinearGradient(computed.backgroundImage));
+      fills.push(...parseGradientLayers(computed.backgroundImage, rect));
     } catch { /* skip malformed gradients */ }
   }
 
@@ -218,11 +217,15 @@ function buildNode(node, parentContext, ctx, path) {
 
   const pseudoBefore = renderablePseudoChildren
     .filter((pseudo) => pseudo.zOrder !== 'top')
-    .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudo.${index}`, ctx))
+    .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudo.${index}`, ctx, {
+      participatesInLayout: shouldPseudoParticipateInParentLayout(node, pseudo),
+    }))
     .filter(Boolean);
   const pseudoTop = renderablePseudoChildren
     .filter((pseudo) => pseudo.zOrder === 'top')
-    .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudoTop.${index}`, ctx))
+    .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudoTop.${index}`, ctx, {
+      participatesInLayout: shouldPseudoParticipateInParentLayout(node, pseudo),
+    }))
     .filter(Boolean);
 
   const orderedChildren = getOrderedChildren(children);
@@ -427,10 +430,10 @@ function getNativePseudoChildren(node) {
   return result;
 }
 
-function buildPseudoNode(pseudo, path, ctx = {}) {
+function buildPseudoNode(pseudo, path, ctx = {}, options = {}) {
   const pseudoId = `pseudo-${path}-${pseudo.name.replace(/\s+/g, '-').toLowerCase()}`;
   const isTextPseudo = pseudo.type === 'text' && Boolean(pseudo.content);
-  const pseudoBackgrounds = isTextPseudo ? [] : buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor);
+  const pseudoBackgrounds = isTextPseudo ? [] : buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor, pseudo);
   const pseudoBackgroundPattern = isTextPseudo ? null : detectBackgroundPattern(pseudo.computed);
   const pseudoEffects = pseudo.computed ? mapVisualEffects(pseudo.computed) : [];
   const pseudoStrokes = pseudo.computed ? mapBorder(pseudo.computed) : {};
@@ -458,7 +461,7 @@ function buildPseudoNode(pseudo, path, ctx = {}) {
     y: Math.round(pseudo.y),
     width: Math.round(pseudo.width),
     height: Math.round(pseudo.height),
-    layoutPositioning: 'ABSOLUTE',
+    ...(!options.participatesInLayout ? { layoutPositioning: 'ABSOLUTE' } : {}),
     opacity: roundFloat(pseudo.opacity ?? 1),
     fills: pseudoBackgrounds,
     ...(pseudoBackgroundPattern ? { _backgroundPattern: pseudoBackgroundPattern } : {}),
@@ -479,6 +482,15 @@ function buildPseudoNode(pseudo, path, ctx = {}) {
       ...textTypography,
     }] : [],
   };
+}
+
+function shouldPseudoParticipateInParentLayout(node, pseudo) {
+  if (!node || !pseudo || !isFlexDisplay(node.computed?.display)) {
+    return false;
+  }
+
+  const position = pseudo.position || pseudo.computed?.position || 'static';
+  return position !== 'absolute' && position !== 'fixed';
 }
 
 function buildFormControlTextNode(node, ctx, path, resolvedRect = null, textTruncationContext = null, tableCellAutoWidth = false) {
@@ -633,7 +645,7 @@ function mergeFormControlTextStyles(baseComputed, overrideComputed) {
   return merged;
 }
 
-function buildPseudoBackgrounds(computed, fallbackFillColor) {
+function buildPseudoBackgrounds(computed, fallbackFillColor, rect = null) {
   if (!computed) {
     return fallbackFillColor && fallbackFillColor !== 'noise-texture'
       ? [colorSolidPaint(fallbackFillColor)]
@@ -645,8 +657,8 @@ function buildPseudoBackgrounds(computed, fallbackFillColor) {
   }
 
   const fills = mapBackgroundColor(computed);
-  if (computed.backgroundImage && computed.backgroundImage.includes('linear-gradient')) {
-    fills.push(...parseLinearGradientLayers(computed.backgroundImage));
+  if (computed.backgroundImage) {
+    fills.push(...parseGradientLayers(computed.backgroundImage, rect));
   }
 
   // A pseudo box inherits `color` from its parent, but that text color is not a
@@ -655,7 +667,7 @@ function buildPseudoBackgrounds(computed, fallbackFillColor) {
 }
 
 function buildMergedPseudoBackgrounds(pseudo) {
-  const paints = buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor);
+  const paints = buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor, pseudo);
   const opacity = Number.isFinite(pseudo.opacity) ? pseudo.opacity : 1;
   return paints.map((paint) => applyPaintOpacity(paint, opacity));
 }
@@ -691,7 +703,7 @@ function shouldMergePseudoIntoParent(node, pseudo) {
     return false;
   }
 
-  return buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor).length > 0;
+  return buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor, pseudo).length > 0;
 }
 
 function isTransparentCssBackground(computed) {

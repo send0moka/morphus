@@ -660,6 +660,69 @@ test('assigns a fallback font to pseudo text content', () => {
   expect(tree.children[0].clipsContent).toBe(false);
 });
 
+test('keeps static pseudo elements in flex auto layout flow', () => {
+  const labelText = textContainerNode({
+    tag: 'span',
+    text: 'Elemen 01',
+    rect: { x: 144, y: 50, width: 96, height: 20 },
+    computed: {
+      display: 'inline',
+      color: 'rgb(102, 102, 102)',
+      fontSize: '12px',
+    },
+  });
+  const label = frameNode({
+    tag: 'p',
+    classList: ['section-label'],
+    rect: { x: 100, y: 50, width: 140, height: 20 },
+    computed: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      columnGap: '12px',
+    },
+    pseudo: {
+      before: {
+        name: 'p.section-label::before',
+        type: 'box',
+        content: null,
+        rect: { x: 100, y: 59.5, width: 32, height: 1 },
+        fillColor: 'rgb(200, 255, 0)',
+        opacity: 1,
+        position: 'static',
+        zOrder: 'bottom',
+        computed: baseComputed({
+          display: 'block',
+          position: 'static',
+          width: '32px',
+          height: '1px',
+          backgroundColor: 'rgb(200, 255, 0)',
+        }),
+      },
+      after: null,
+    },
+    children: [labelText],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 320, height: 120 },
+    children: [label],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtLabel = tree.children[0];
+  const pseudo = builtLabel.children[0];
+  const text = builtLabel.children[1];
+
+  expect(builtLabel.layoutMode).toBe('HORIZONTAL');
+  expect(builtLabel.counterAxisAlignItems).toBe('CENTER');
+  expect(builtLabel.itemSpacing).toBe(12);
+  expect(pseudo.name).toBe('[pseudo] p.section-label::before');
+  expect(pseudo.layoutPositioning).toBeUndefined();
+  expect(text.type).toBe('TEXT');
+  expect(text.layoutPositioning).toBeUndefined();
+});
+
 test('merges full-cover negative z pseudo backgrounds into the parent fill', () => {
   const nav = frameNode({
     tag: 'nav',
@@ -696,6 +759,79 @@ test('merges full-cover negative z pseudo backgrounds into the parent fill', () 
 
   expect(builtNav.children.some((child) => child.name.includes('[pseudo]'))).toBe(false);
   expect(builtNav.fills[0].type).toBe('GRADIENT_LINEAR');
+});
+
+test('maps CSS radial-gradient backgrounds to Figma radial fills', () => {
+  const hero = frameNode({
+    tag: 'section',
+    classList: ['hero'],
+    rect: { x: 0, y: 0, width: 1000, height: 500 },
+    computed: {
+      backgroundColor: 'rgb(10, 10, 10)',
+      backgroundImage: 'radial-gradient(ellipse 80% 60% at 25% 50%, #C8FF00 0%, #00FFCC 100%)',
+    },
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1000, height: 500 },
+    children: [hero],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtHero = tree.children[0];
+  const radial = builtHero.fills.find((paint) => paint.type === 'GRADIENT_RADIAL');
+
+  expect(radial).toBeTruthy();
+  expect(radial.gradientStops).toEqual([
+    {
+      color: { r: 200 / 255, g: 1, b: 0, a: 1 },
+      position: 0,
+    },
+    {
+      color: { r: 0, g: 1, b: 204 / 255, a: 1 },
+      position: 1,
+    },
+  ]);
+
+  const [u, v] = radial.gradientTransform;
+  const mapX = (x, y) => u[0] * x + u[1] * y + u[2];
+  const mapY = (x, y) => v[0] * x + v[1] * y + v[2];
+  expect(mapX(0.25, 0.5)).toBeCloseTo(0, 5);
+  expect(mapY(0.25, 0.5)).toBeCloseTo(0.5, 5);
+  expect(mapX(0.25, 1.1)).toBeCloseTo(1, 5);
+});
+
+test('keeps layered radial and linear gradients as separate fills', () => {
+  const hero = frameNode({
+    tag: 'section',
+    classList: ['hero'],
+    rect: { x: 0, y: 0, width: 1000, height: 500 },
+    computed: {
+      backgroundImage: [
+        'radial-gradient(circle at right, #00FFCC 0%, transparent 70%)',
+        'linear-gradient(to right, #0A0A0A 0%, #111111 100%)',
+      ].join(', '),
+    },
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1000, height: 500 },
+    children: [hero],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtHero = tree.children[0];
+  const types = builtHero.fills.map((paint) => paint.type);
+
+  expect(types).toEqual(['GRADIENT_RADIAL', 'GRADIENT_LINEAR']);
+  expect(builtHero.fills[0].gradientStops).toHaveLength(2);
+  expect(builtHero.fills[1].gradientStops).toHaveLength(2);
+  expect(builtHero.fills[0].gradientStops[1].color).toEqual({
+    r: 0,
+    g: 1,
+    b: 204 / 255,
+    a: 0,
+  });
 });
 
 test('does not use inherited pseudo text color as a background fallback', () => {

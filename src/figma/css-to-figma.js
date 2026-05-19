@@ -186,6 +186,33 @@ export function parseLinearGradientLayers(cssBackgroundImage) {
     .map((layer) => parseLinearGradient(layer));
 }
 
+export function parseGradientLayers(cssBackgroundImage, rect = null) {
+  return splitCssLayers(cssBackgroundImage)
+    .map((layer) => parseGradientLayer(layer, rect))
+    .filter(Boolean);
+}
+
+export function parseGradientLayer(cssGradient, rect = null) {
+  const source = String(cssGradient || '').trim();
+  if (/^linear-gradient\(/i.test(source)) {
+    return parseLinearGradient(source);
+  }
+  if (/^radial-gradient\(/i.test(source)) {
+    return parseRadialGradient(source, rect);
+  }
+  return null;
+}
+
+export function parseRadialGradient(cssGradient, rect = null) {
+  const geometry = parseRadialGradientGeometry(cssGradient, rect);
+
+  return {
+    type: 'GRADIENT_RADIAL',
+    gradientTransform: radialGradientTransform(geometry),
+    gradientStops: extractGradientStops(cssGradient),
+  };
+}
+
 function linearGradientTransform(cssGradient) {
   const angle = parseLinearGradientAngle(cssGradient);
   const rad = ((angle - 90) * Math.PI) / 180;
@@ -232,19 +259,397 @@ function extractGradientStops(css) {
   const stopRegex = /(rgba?\([^)]+\)|#[0-9a-f]{3,8}|transparent)\s*([\d.]+%)?/gi;
   const stops = [];
   let match;
-  let index = 0;
 
   while ((match = stopRegex.exec(css)) !== null) {
     const color = cssColorToFigma(match[1]);
-    const position = match[2] ? parseFloat(match[2]) / 100 : index === 0 ? 0 : 1;
-    stops.push({ color, position });
-    index++;
+    const position = match[2] ? parseFloat(match[2]) / 100 : null;
+    stops.push({
+      color,
+      position: Number.isFinite(position) ? position : null,
+      rawColor: match[1],
+    });
   }
 
-  return stops.length > 0 ? stops : [
+  if (stops.length === 0) {
+    return fallbackTransparentGradientStops();
+  }
+
+  return normalizeTransparentGradientStops(normalizeGradientStopPositions(stops))
+    .map((stop) => ({
+      color: stop.color,
+      position: stop.position,
+    }));
+}
+
+function normalizeGradientStopPositions(stops) {
+  const result = stops.map((stop) => ({ ...stop }));
+  const lastIndex = result.length - 1;
+
+  if (result[0].position === null) {
+    result[0].position = 0;
+  }
+  if (result[lastIndex].position === null) {
+    result[lastIndex].position = lastIndex === 0 ? result[0].position : 1;
+  }
+
+  let index = 0;
+  while (index < result.length) {
+    if (result[index].position !== null) {
+      index++;
+      continue;
+    }
+
+    const startIndex = index - 1;
+    let endIndex = index + 1;
+    while (endIndex < result.length && result[endIndex].position === null) {
+      endIndex++;
+    }
+
+    const startPosition = result[startIndex]?.position ?? 0;
+    const endPosition = result[endIndex]?.position ?? 1;
+    const gap = endIndex - startIndex;
+    for (let fillIndex = index; fillIndex < endIndex; fillIndex++) {
+      const step = fillIndex - startIndex;
+      result[fillIndex].position = startPosition + ((endPosition - startPosition) * step) / gap;
+    }
+
+    index = endIndex;
+  }
+
+  let previous = 0;
+  for (let stopIndex = 0; stopIndex < result.length; stopIndex++) {
+    const position = Number.isFinite(result[stopIndex].position) ? result[stopIndex].position : previous;
+    previous = Math.max(previous, Math.min(Math.max(position, 0), 1));
+    result[stopIndex].position = previous;
+  }
+
+  return result;
+}
+
+function normalizeTransparentGradientStops(stops) {
+  return stops.map((stop, index) => {
+    if ((stop.color?.a ?? 1) > 0) {
+      return stop;
+    }
+
+    const neighboringColor = findNeighboringOpaqueStopColor(stops, index);
+    if (!neighboringColor) {
+      return stop;
+    }
+
+    return {
+      ...stop,
+      color: {
+        r: neighboringColor.r,
+        g: neighboringColor.g,
+        b: neighboringColor.b,
+        a: 0,
+      },
+    };
+  });
+}
+
+function findNeighboringOpaqueStopColor(stops, index) {
+  for (let before = index - 1; before >= 0; before--) {
+    if ((stops[before].color?.a ?? 1) > 0) {
+      return stops[before].color;
+    }
+  }
+  for (let after = index + 1; after < stops.length; after++) {
+    if ((stops[after].color?.a ?? 1) > 0) {
+      return stops[after].color;
+    }
+  }
+  return null;
+}
+
+function fallbackTransparentGradientStops() {
+  return [
     { color: { r: 0, g: 0, b: 0, a: 0 }, position: 0 },
     { color: { r: 0, g: 0, b: 0, a: 0 }, position: 1 },
   ];
+}
+
+function parseRadialGradientGeometry(cssGradient, rect = null) {
+  const args = getGradientArguments(cssGradient);
+  const prelude = getRadialGradientPrelude(args);
+  const atParts = splitRadialPreludeAt(prelude);
+  const shape = /\bcircle\b/i.test(atParts.size) ? 'circle' : 'ellipse';
+  const size = atParts.size
+    .replace(/\b(circle|ellipse)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const center = parseRadialPosition(atParts.position, rect);
+  const radii = parseRadialRadii(size, shape, center, rect);
+
+  return {
+    center,
+    radiusX: Math.max(radii.radiusX, 0.0001),
+    radiusY: Math.max(radii.radiusY, 0.0001),
+  };
+}
+
+function getGradientArguments(cssGradient) {
+  const source = String(cssGradient || '').trim();
+  const openIndex = source.indexOf('(');
+  const closeIndex = source.lastIndexOf(')');
+  if (openIndex === -1 || closeIndex <= openIndex) {
+    return [];
+  }
+  return splitCssLayers(source.slice(openIndex + 1, closeIndex));
+}
+
+function getRadialGradientPrelude(args) {
+  const first = (args && args[0] ? String(args[0]) : '').trim();
+  return isRadialGradientPrelude(first) ? first : '';
+}
+
+function isRadialGradientPrelude(value) {
+  const source = String(value || '').trim();
+  if (!source) {
+    return false;
+  }
+  const lower = source.toLowerCase();
+  return /\bat\b/.test(lower)
+    || /\b(circle|ellipse|closest-side|closest-corner|farthest-side|farthest-corner|contain|cover)\b/.test(lower)
+    || /^[\d.]+(?:%|px)?(?:\s+[\d.]+(?:%|px)?)?$/.test(lower);
+}
+
+function splitRadialPreludeAt(prelude) {
+  const source = String(prelude || '').trim();
+  const match = source.match(/\bat\b/i);
+  if (!match) {
+    return { size: source, position: '' };
+  }
+
+  return {
+    size: source.slice(0, match.index).trim(),
+    position: source.slice(match.index + match[0].length).trim(),
+  };
+}
+
+function parseRadialPosition(position, rect = null) {
+  const source = String(position || '').trim().toLowerCase();
+  if (!source) {
+    return { x: 0.5, y: 0.5 };
+  }
+
+  const tokens = source.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 4) {
+    return parseFourTokenRadialPosition(tokens, rect);
+  }
+
+  let x = null;
+  let y = null;
+  for (const token of tokens) {
+    if (token === 'center') {
+      if (x === null) {
+        x = 0.5;
+      } else if (y === null) {
+        y = 0.5;
+      }
+    } else if (isHorizontalPositionKeyword(token)) {
+      x = positionKeywordToValue(token);
+    } else if (isVerticalPositionKeyword(token)) {
+      y = positionKeywordToValue(token);
+    } else if (x === null) {
+      x = parsePositionLength(token, rect?.width);
+    } else if (y === null) {
+      y = parsePositionLength(token, rect?.height);
+    }
+  }
+
+  return {
+    x: clampUnit(x === null ? 0.5 : x),
+    y: clampUnit(y === null ? 0.5 : y),
+  };
+}
+
+function parseFourTokenRadialPosition(tokens, rect = null) {
+  let x = 0.5;
+  let y = 0.5;
+  for (let index = 0; index < tokens.length - 1; index += 2) {
+    const edge = tokens[index];
+    const offset = tokens[index + 1];
+    if (edge === 'left') {
+      x = parsePositionLength(offset, rect?.width);
+    } else if (edge === 'right') {
+      x = 1 - parsePositionLength(offset, rect?.width);
+    } else if (edge === 'top') {
+      y = parsePositionLength(offset, rect?.height);
+    } else if (edge === 'bottom') {
+      y = 1 - parsePositionLength(offset, rect?.height);
+    }
+  }
+  return { x: clampUnit(x), y: clampUnit(y) };
+}
+
+function isHorizontalPositionKeyword(token) {
+  return token === 'left' || token === 'right';
+}
+
+function isVerticalPositionKeyword(token) {
+  return token === 'top' || token === 'bottom';
+}
+
+function positionKeywordToValue(token) {
+  if (token === 'left' || token === 'top') return 0;
+  if (token === 'right' || token === 'bottom') return 1;
+  return 0.5;
+}
+
+function parsePositionLength(token, axisLength) {
+  const source = String(token || '').trim();
+  if (source.endsWith('%')) {
+    return parseFloat(source) / 100;
+  }
+  if (source.endsWith('px') && axisLength > 0) {
+    return parsePx(source) / axisLength;
+  }
+  const value = parseFloat(source);
+  return Number.isFinite(value) ? value : 0.5;
+}
+
+function parseRadialRadii(size, shape, center, rect = null) {
+  const source = String(size || '').trim().toLowerCase();
+  const explicit = extractRadialSizeTokens(source);
+  if (explicit.length > 0) {
+    return parseExplicitRadialRadii(explicit, shape, rect);
+  }
+
+  const keyword = source.match(/\b(closest-side|closest-corner|farthest-side|farthest-corner|contain|cover)\b/)?.[1]
+    || 'farthest-corner';
+  return keywordRadialRadii(keyword, shape, center, rect);
+}
+
+function extractRadialSizeTokens(value) {
+  return (String(value || '').match(/(?:\d*\.)?\d+(?:%|px)?/g) || [])
+    .filter((token) => Number.isFinite(parseFloat(token)));
+}
+
+function parseExplicitRadialRadii(tokens, shape, rect = null) {
+  if (shape === 'circle') {
+    if (String(tokens[0]).endsWith('px') && rect?.width > 0 && rect?.height > 0) {
+      const px = parsePx(tokens[0]);
+      return {
+        radiusX: px / rect.width,
+        radiusY: px / rect.height,
+      };
+    }
+
+    const radius = parseRadialRadiusToken(tokens[0], Math.min(rect?.width || 0, rect?.height || 0));
+    return { radiusX: radius, radiusY: radius };
+  }
+
+  return {
+    radiusX: parseRadialRadiusToken(tokens[0], rect?.width),
+    radiusY: parseRadialRadiusToken(tokens[1] || tokens[0], rect?.height),
+  };
+}
+
+function parseRadialRadiusToken(token, axisLength) {
+  const source = String(token || '').trim();
+  if (source.endsWith('%')) {
+    return parseFloat(source) / 100;
+  }
+  if (source.endsWith('px') && axisLength > 0) {
+    return parsePx(source) / axisLength;
+  }
+  const value = parseFloat(source);
+  return Number.isFinite(value) ? value : 0.5;
+}
+
+function keywordRadialRadii(keyword, shape, center, rect = null) {
+  if (shape === 'circle') {
+    const radiusPx = keywordCircleRadius(keyword, center, rect);
+    const width = rect?.width || 1;
+    const height = rect?.height || 1;
+    return {
+      radiusX: radiusPx / width,
+      radiusY: radiusPx / height,
+    };
+  }
+
+  const closestX = Math.min(center.x, 1 - center.x);
+  const closestY = Math.min(center.y, 1 - center.y);
+  const farthestX = Math.max(center.x, 1 - center.x);
+  const farthestY = Math.max(center.y, 1 - center.y);
+
+  if (keyword === 'closest-side' || keyword === 'contain') {
+    return { radiusX: closestX, radiusY: closestY };
+  }
+  if (keyword === 'farthest-side') {
+    return { radiusX: farthestX, radiusY: farthestY };
+  }
+  if (keyword === 'closest-corner') {
+    return { radiusX: closestX * Math.SQRT2, radiusY: closestY * Math.SQRT2 };
+  }
+  return { radiusX: farthestX * Math.SQRT2, radiusY: farthestY * Math.SQRT2 };
+}
+
+function keywordCircleRadius(keyword, center, rect = null) {
+  const width = rect?.width || 1;
+  const height = rect?.height || 1;
+  const left = center.x * width;
+  const right = (1 - center.x) * width;
+  const top = center.y * height;
+  const bottom = (1 - center.y) * height;
+
+  if (keyword === 'closest-side' || keyword === 'contain') {
+    return Math.min(left, right, top, bottom);
+  }
+  if (keyword === 'farthest-side') {
+    return Math.max(left, right, top, bottom);
+  }
+
+  const distances = [
+    Math.hypot(left, top),
+    Math.hypot(right, top),
+    Math.hypot(left, bottom),
+    Math.hypot(right, bottom),
+  ];
+  return keyword === 'closest-corner' ? Math.min(...distances) : Math.max(...distances);
+}
+
+function radialGradientTransform({ center, radiusX, radiusY }) {
+  const centerHandle = { x: center.x, y: center.y };
+  const radiusYHandle = { x: center.x, y: center.y + radiusY };
+  const radiusXHandle = { x: center.x + radiusX, y: center.y };
+  return gradientTransformFromHandles(centerHandle, radiusYHandle, radiusXHandle);
+}
+
+function gradientTransformFromHandles(start, end, width) {
+  const ux = end.x - start.x;
+  const uy = end.y - start.y;
+  const vx = width.x - start.x;
+  const vy = width.y - start.y;
+  const det = ux * vy - vx * uy;
+
+  if (Math.abs(det) < 1e-8) {
+    return [
+      [1, 0, 0],
+      [0, 1, 0],
+    ];
+  }
+
+  const m00 = vy / det;
+  const m01 = -vx / det;
+  const m10 = 0.5 * uy / det;
+  const m11 = -0.5 * ux / det;
+  const tx = -m00 * start.x - m01 * start.y;
+  const ty = 0.5 - m10 * start.x - m11 * start.y;
+
+  return [
+    [normalizeZero(m00), normalizeZero(m01), normalizeZero(tx)],
+    [normalizeZero(m10), normalizeZero(m11), normalizeZero(ty)],
+  ];
+}
+
+function clampUnit(value) {
+  if (!Number.isFinite(value)) {
+    return 0.5;
+  }
+  return Math.max(0, Math.min(value, 1));
 }
 
 export function splitCssLayers(css) {
