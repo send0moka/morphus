@@ -2076,6 +2076,10 @@ function applyRangeTextDecorationProps(text, start, end, run) {
 function applyTextSizing(text, spec, parentLayoutMode) {
   if (!spec.width) return;
   try {
+    if (spec._forceAutoWidth) {
+      text.textAutoResize = 'WIDTH_AND_HEIGHT';
+      return;
+    }
     if (spec.rotation !== undefined && Math.abs(spec.rotation) > 0.01) {
       if (!hasExplicitLineBreaks(spec.characters)) {
         text.textAutoResize = 'WIDTH_AND_HEIGHT';

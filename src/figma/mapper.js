@@ -40,6 +40,15 @@ export function buildFigmaTree({ annotated }, { pseudoElements = [], gridStrateg
 
 function buildNode(node, parentContext, ctx, path) {
   const { computed, rect, tag, text, textRuns = [], children = [], classList, isTextContainer, _pageLayout, _role, svgMarkup, imageData } = node;
+
+  let liIndex;
+  if (tag === 'li' && parentContext?.sourceNode?.children) {
+    const siblings = parentContext.sourceNode.children.filter(c => c.tag === 'li');
+    const idx = siblings.indexOf(node);
+    if (idx !== -1) {
+      liIndex = idx + 1;
+    }
+  }
   const rawResolvedRect = resolveRenderedRect(node, parentContext);
   const parentResolvedRect = parentContext?.resolvedRect ?? null;
   const isLeafText = Boolean(text) && children.length === 0;
@@ -143,7 +152,7 @@ function buildNode(node, parentContext, ctx, path) {
       typography.textTruncation = 'ENDING';
     }
 
-    return {
+    const textNode = {
       ...base,
       characters: text,
       ...typography,
@@ -152,6 +161,12 @@ function buildNode(node, parentContext, ctx, path) {
       textRuns: buildTextRuns(textRuns, ctx.fontMap),
       opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
     };
+
+    if (parentContext?.sourceNode?.tag === 'li' && parentContext?.parentLayout?.layoutMode === 'HORIZONTAL') {
+      textNode._forceAutoWidth = true;
+    }
+
+    return textNode;
   }
 
   // Frame node
@@ -160,11 +175,38 @@ function buildNode(node, parentContext, ctx, path) {
   const isInlineBlock = computed.display === 'inline-block';
   const flexLayoutInfo = isFlex ? getRenderableFlexLayout(node) : null;
 
-  const layout = isFlex
+  let layout = isFlex
     ? flexLayoutInfo?.layout
     : isInlineBlock
       ? getRenderableInlineLayout(node)
       : null;
+
+  if (!layout && tag === 'li' && (node.pseudo?.before || node.pseudoChildren?.some(p => p.name && (p.name === 'before' || p.name.endsWith('::before'))))) {
+    const children = Array.isArray(node.children) ? node.children.filter(Boolean) : [];
+    const hasOnlyInlineOrSimpleChildren = children.every(child => 
+      child.tag === 'span' || 
+      child.tag === 'a' || 
+      child.tag === 'code' || 
+      child.tag === 'strong' || 
+      child.tag === 'em' ||
+      child.tag === 'i' ||
+      child.tag === 'b' ||
+      child.tag === 'u' ||
+      child.tag === 'small' ||
+      child.tag === 'p' ||
+      child.isTextContainer ||
+      !child.tag
+    );
+
+    if (hasOnlyInlineOrSimpleChildren) {
+      layout = {
+        layoutMode: 'HORIZONTAL',
+        primaryAxisAlignItems: 'MIN',
+        counterAxisAlignItems: 'CENTER',
+        itemSpacing: 12,
+      };
+    }
+  }
   const flexAutoMarginLayout = isFlex ? getFlexAutoMarginLayoutOverride(node, layout) : null;
   const nativeControlLayout = getNativeControlLayout(node);
 
@@ -212,6 +254,15 @@ function buildNode(node, parentContext, ctx, path) {
     } : {}),
   };
 
+  if (layout && tag === 'li') {
+    const pseudoBefore = node.pseudo?.before || node.pseudoChildren?.find(p => p.name === 'before' || p.name?.endsWith('::before'));
+    const isAbsolutePseudo = pseudoBefore?.computed?.position === 'absolute';
+    if (isAbsolutePseudo) {
+      const originalPaddingLeft = frameNode.paddingLeft || 0;
+      frameNode.paddingLeft = Math.max(0, originalPaddingLeft - 24);
+    }
+  }
+
   if (_pageLayout || tag === 'body') {
     frameNode.clipsContent = true;
   }
@@ -236,7 +287,11 @@ function buildNode(node, parentContext, ctx, path) {
   const childTextTruncationContext = usesTableCellAutoWidth ? null : getChildTextTruncationContext(node, resolvedRect, inheritedTextTruncationContext);
 
   if (isLeafText) {
-    childNodes.push(buildEmbeddedTextNode(node, ctx, `${path}.text`, resolvedRect, 'text', childTextTruncationContext, usesTableCellAutoWidth));
+    const textNode = buildEmbeddedTextNode(node, ctx, `${path}.text`, resolvedRect, 'text', childTextTruncationContext, usesTableCellAutoWidth);
+    if (parentContext?.sourceNode?.tag === 'li' && parentContext?.parentLayout?.layoutMode === 'HORIZONTAL') {
+      textNode._forceAutoWidth = true;
+    }
+    childNodes.push(textNode);
   }
 
   const controlTextNode = buildFormControlTextNode(node, ctx, `${path}.control`, resolvedRect, childTextTruncationContext, usesTableCellAutoWidth);
@@ -260,13 +315,15 @@ function buildNode(node, parentContext, ctx, path) {
   const pseudoBefore = renderablePseudoChildren
     .filter((pseudo) => pseudo.zOrder !== 'top')
     .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudo.${index}`, ctx, {
-      participatesInLayout: shouldPseudoParticipateInParentLayout(node, pseudo),
+      participatesInLayout: shouldPseudoParticipateInParentLayout(node, pseudo, layout),
+      liIndex,
     }))
     .filter(Boolean);
   const pseudoTop = renderablePseudoChildren
     .filter((pseudo) => pseudo.zOrder === 'top')
     .map((pseudo, index) => buildPseudoNode(pseudo, `${path}.pseudoTop.${index}`, ctx, {
-      participatesInLayout: shouldPseudoParticipateInParentLayout(node, pseudo),
+      participatesInLayout: shouldPseudoParticipateInParentLayout(node, pseudo, layout),
+      liIndex,
     }))
     .filter(Boolean);
 
@@ -281,6 +338,7 @@ function buildNode(node, parentContext, ctx, path) {
           textTruncationContext: childTextTruncationContext,
           tableCellAutoWidth: usesTableCellAutoWidth,
           surfaceFills: nextSurfaceFills,
+          parentLayout: layout,
         }, ctx, `${path}.${index}`),
     }))
     .filter((pair) => Boolean(pair.built));
@@ -300,6 +358,16 @@ function buildNode(node, parentContext, ctx, path) {
 function mapChildLayoutSizing(node, parentContext, resolvedRect) {
   const parentNode = parentContext?.sourceNode;
   const parentComputed = parentNode?.computed;
+
+  if (parentNode?.tag === 'li' && parentContext?.parentLayout?.layoutMode === 'HORIZONTAL') {
+    const isPseudo = node._isPseudo || node.name === 'before' || node.name === 'after' || node.name?.startsWith('[pseudo]');
+    if (!isPseudo) {
+      return {
+        layoutSizingHorizontal: 'FILL',
+      };
+    }
+  }
+
   if (!node || !resolvedRect || !parentContext?.resolvedRect || !isFlexDisplay(parentComputed?.display) || isAbsoluteLikeNode(node)) {
     return {};
   }
@@ -474,7 +542,11 @@ function getNativePseudoChildren(node) {
 
 function buildPseudoNode(pseudo, path, ctx = {}, options = {}) {
   const pseudoId = `pseudo-${path}-${pseudo.name.replace(/\s+/g, '-').toLowerCase()}`;
-  const isTextPseudo = pseudo.type === 'text' && Boolean(pseudo.content);
+  let pseudoContent = pseudo.content;
+  if (pseudoContent && pseudoContent.includes('counter(')) {
+    pseudoContent = resolveCounterText(pseudoContent, options.liIndex || 1);
+  }
+  const isTextPseudo = pseudo.type === 'text' && Boolean(pseudoContent);
   const pseudoBackgrounds = isTextPseudo ? [] : buildPseudoBackgrounds(pseudo.computed, pseudo.fillColor, pseudo);
   const pseudoBackgroundPattern = isTextPseudo ? null : detectBackgroundPattern(pseudo.computed);
   const pseudoEffects = pseudo.computed ? mapVisualEffects(pseudo.computed) : [];
@@ -495,14 +567,28 @@ function buildPseudoNode(pseudo, path, ctx = {}, options = {}) {
           : [colorSolidPaint('#ffffff')],
       };
 
+  let pseudoWidth = pseudo.width;
+  let pseudoHeight = pseudo.height;
+  if (isTextPseudo && pseudoContent && options.liIndex) {
+    const fontSize = textTypography.fontSize || 16;
+    const estimatedWidth = Math.ceil(pseudoContent.length * fontSize * 0.65) + 4;
+    const estimatedHeight = Math.ceil(fontSize * 1.2);
+    if (pseudoWidth > estimatedWidth) {
+      pseudoWidth = estimatedWidth;
+    }
+    if (pseudoHeight > estimatedHeight) {
+      pseudoHeight = estimatedHeight;
+    }
+  }
+
   return {
     id: pseudoId,
     name: `[pseudo] ${pseudo.name}`,
     type: 'FRAME',
     x: Math.round(pseudo.x),
     y: Math.round(pseudo.y),
-    width: Math.round(pseudo.width),
-    height: Math.round(pseudo.height),
+    width: Math.round(pseudoWidth),
+    height: Math.round(pseudoHeight),
     ...(!options.participatesInLayout ? { layoutPositioning: 'ABSOLUTE' } : {}),
     opacity: roundFloat(pseudo.opacity ?? 1),
     fills: pseudoBackgrounds,
@@ -513,22 +599,27 @@ function buildPseudoNode(pseudo, path, ctx = {}, options = {}) {
     _isPseudo: true,
     _pseudoType: pseudo.type,
     _pseudoPosition: pseudo.position,
-    children: pseudo.content ? [{
+    children: pseudoContent ? [{
       id: `${pseudoId}-content`,
       name: 'content',
       type: 'TEXT',
-      characters: pseudo.content,
+      characters: pseudoContent,
       x: 0, y: 0,
-      width: pseudo.width,
-      height: pseudo.height,
+      width: pseudoWidth,
+      height: pseudoHeight,
       ...textTypography,
     }] : [],
   };
 }
 
-function shouldPseudoParticipateInParentLayout(node, pseudo) {
-  if (!node || !pseudo || !isFlexDisplay(node.computed?.display)) {
+function shouldPseudoParticipateInParentLayout(node, pseudo, layout = null) {
+  const hasAutoLayout = isFlexDisplay(node.computed?.display) || Boolean(layout);
+  if (!node || !pseudo || !hasAutoLayout) {
     return false;
+  }
+
+  if (node.tag === 'li' && layout) {
+    return true;
   }
 
   const position = pseudo.position || pseudo.computed?.position || 'static';
@@ -1939,6 +2030,78 @@ function getLinearGradientAxis(layer) {
     return 'x';
   }
   return 'y';
+}
+
+function toRoman(num, uppercase = true) {
+  const romanLookup = [
+    ['M', 1000],
+    ['CM', 900],
+    ['D', 500],
+    ['CD', 400],
+    ['C', 100],
+    ['XC', 90],
+    ['L', 50],
+    ['XL', 40],
+    ['X', 10],
+    ['IX', 9],
+    ['V', 5],
+    ['IV', 4],
+    ['I', 1]
+  ];
+  let res = '';
+  let val = num;
+  for (const [str, amount] of romanLookup) {
+    while (val >= amount) {
+      res += str;
+      val -= amount;
+    }
+  }
+  return uppercase ? res : res.toLowerCase();
+}
+
+function toAlpha(num, uppercase = true) {
+  let res = '';
+  let val = num;
+  while (val > 0) {
+    const mod = (val - 1) % 26;
+    res = String.fromCharCode((uppercase ? 65 : 97) + mod) + res;
+    val = Math.floor((val - 1) / 26);
+  }
+  return res;
+}
+
+function resolveCounterText(content, index) {
+  if (!content) return '';
+  const trimmed = content.trim();
+
+  // Format: counter(name, style)
+  const counterMatch = trimmed.match(/counter\([^,]+,\s*([^)]+)\)/);
+  if (counterMatch) {
+    const style = counterMatch[1].trim().toLowerCase();
+    if (style === 'decimal-leading-zero') {
+      return String(index).padStart(2, '0');
+    }
+    if (style === 'upper-roman') {
+      return toRoman(index, true);
+    }
+    if (style === 'lower-roman') {
+      return toRoman(index, false);
+    }
+    if (style === 'lower-alpha' || style === 'lower-latin') {
+      return toAlpha(index, false);
+    }
+    if (style === 'upper-alpha' || style === 'upper-latin') {
+      return toAlpha(index, true);
+    }
+    return String(index);
+  }
+
+  // Format: counter(name)
+  if (trimmed.includes('counter(')) {
+    return String(index);
+  }
+
+  return content;
 }
 
 function parseRotationAndScale(transform) {

@@ -16,7 +16,9 @@ import { pathToFileURL } from 'url';
  */
 export async function extractFromFile(filePath, { width = 1440, height = 900 } = {}) {
   const absPath = resolve(filePath);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    args: ['--disable-web-security']
+  });
   const page = await browser.newPage({ viewport: { width, height } });
 
   await page.goto(pathToFileURL(absPath).href);
@@ -31,7 +33,9 @@ export async function extractFromFile(filePath, { width = 1440, height = 900 } =
  * @returns {{ domTree, title: string }}
  */
 export async function extractFromHtml(html, { width = 1440, height = 900, baseUrl = null } = {}) {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    args: ['--disable-web-security']
+  });
   const page = await browser.newPage({ viewport: { width, height } });
   const htmlWithBase = injectBaseHref(html, normalizeBaseUrl(baseUrl));
 
@@ -52,6 +56,25 @@ async function extractFromPage(page) {
 
 async function stabilizePage(page) {
   await page.waitForLoadState('networkidle');
+
+  // Wait for all images to finish loading completely (with a 2-second timeout)
+  await page.evaluate(async () => {
+    const imgs = Array.from(document.querySelectorAll('img'));
+    await Promise.all(imgs.map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        const timer = setTimeout(resolve, 2000);
+        img.onload = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        img.onerror = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    }));
+  });
 
   await page.evaluate(() => {
     document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
@@ -1144,8 +1167,22 @@ function walkDOMInBrowser() {
       return null;
     }
 
+    let base64Src = src;
+    try {
+      if (el.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = el.naturalWidth;
+        canvas.height = el.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(el, 0, 0);
+        base64Src = canvas.toDataURL('image/png');
+      }
+    } catch (err) {
+      // Fallback to original src if canvas conversion fails
+    }
+
     return {
-      src,
+      src: base64Src,
       alt: el.getAttribute('alt') || '',
       naturalWidth: Number.isFinite(el.naturalWidth) ? el.naturalWidth : 0,
       naturalHeight: Number.isFinite(el.naturalHeight) ? el.naturalHeight : 0,

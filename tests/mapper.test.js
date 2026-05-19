@@ -1668,3 +1668,217 @@ test('handles writing-mode vertical layout auto-rotation and swaps dimensions', 
   expect(builtText.x).toBe(50);
   expect(builtText.y).toBe(220);
 });
+test('automatically synthesizes HORIZONTAL auto-layout for list items (li) containing pseudo before markers', () => {
+  const pseudoBefore = {
+    name: 'before',
+    type: 'text',
+    content: '01',
+    rect: { x: 50, y: 100, width: 20, height: 20 },
+    computed: {
+      position: 'static',
+      color: '#ffff00',
+    },
+  };
+
+  const spanContent = {
+    tag: 'span',
+    rect: { x: 82, y: 100, width: 150, height: 20 },
+    text: 'Instalasi Node',
+    computed: {
+      display: 'inline',
+    },
+  };
+
+  const liNode = {
+    tag: 'li',
+    rect: { x: 50, y: 100, width: 200, height: 20 },
+    computed: {
+      display: 'list-item',
+    },
+    pseudo: {
+      before: pseudoBefore,
+    },
+    children: [spanContent],
+  };
+
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 400, height: 200 },
+    children: [liNode],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtLi = tree.children[0];
+
+  // Should become HORIZONTAL Auto-layout
+  expect(builtLi.type).toBe('FRAME');
+  expect(builtLi.layoutMode).toBe('HORIZONTAL');
+  expect(builtLi.primaryAxisAlignItems).toBe('MIN');
+  expect(builtLi.counterAxisAlignItems).toBe('CENTER');
+  expect(builtLi.itemSpacing).toBe(12);
+
+  // The pseudo before element should be a child and should NOT have layoutPositioning ABSOLUTE
+  const builtPseudo = builtLi.children[0];
+  expect(builtPseudo.name).toBe('[pseudo] before');
+  expect(builtPseudo.layoutPositioning).toBeUndefined(); // Meaning it participates in flex layout!
+});
+test('dynamically evaluates CSS counters like counter(step, decimal-leading-zero) to their resolved values', () => {
+  const pseudoBefore = {
+    name: 'before',
+    type: 'text',
+    content: 'counter(step, decimal-leading-zero)',
+    rect: { x: 50, y: 100, width: 20, height: 20 },
+    computed: {
+      position: 'static',
+      color: '#ffff00',
+    },
+  };
+
+  const spanContent = {
+    tag: 'span',
+    rect: { x: 82, y: 100, width: 150, height: 20 },
+    text: 'Instalasi Node',
+    computed: {
+      display: 'inline',
+    },
+  };
+
+  const liNode1 = {
+    tag: 'li',
+    rect: { x: 50, y: 100, width: 200, height: 20 },
+    computed: {
+      display: 'list-item',
+    },
+    pseudo: {
+      before: pseudoBefore,
+    },
+    children: [spanContent],
+  };
+
+  const liNode2 = {
+    tag: 'li',
+    rect: { x: 50, y: 130, width: 200, height: 20 },
+    computed: {
+      display: 'list-item',
+    },
+    pseudo: {
+      before: {
+        ...pseudoBefore,
+        rect: { x: 50, y: 130, width: 20, height: 20 },
+      },
+    },
+    children: [spanContent],
+  };
+
+  const olNode = {
+    tag: 'ol',
+    rect: { x: 50, y: 100, width: 200, height: 50 },
+    computed: {
+      display: 'block',
+    },
+    children: [liNode1, liNode2],
+  };
+
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 400, height: 200 },
+    children: [olNode],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtOl = tree.children[0];
+  const builtLi1 = builtOl.children[0];
+  const builtLi2 = builtOl.children[1];
+
+  const pseudoTextNode1 = builtLi1.children[0].children[0];
+  const pseudoTextNode2 = builtLi2.children[0].children[0];
+
+  // Verify dynamic counter evaluation to '01' and '02'!
+  expect(pseudoTextNode1.characters).toBe('01');
+  expect(pseudoTextNode2.characters).toBe('02');
+});
+
+test('dynamically evaluates upper-roman, lower-roman, upper-alpha and lower-latin CSS counter styles', () => {
+  const pseudoBeforeRoman = {
+    name: 'before',
+    type: 'text',
+    content: 'counter(feature, upper-roman)',
+    rect: { x: 50, y: 100, width: 20, height: 20 },
+    computed: {
+      position: 'static',
+      color: '#ffff00',
+    },
+  };
+
+  const pseudoBeforeAlpha = {
+    name: 'before',
+    type: 'text',
+    content: 'counter(feature, lower-latin)',
+    rect: { x: 50, y: 150, width: 20, height: 20 },
+    computed: {
+      position: 'static',
+      color: '#ffff00',
+    },
+  };
+
+  const spanContent = {
+    tag: 'span',
+    rect: { x: 82, y: 100, width: 150, height: 20 },
+    text: 'Test content',
+    computed: {
+      display: 'inline',
+    },
+  };
+
+  const liRoman = {
+    tag: 'li',
+    rect: { x: 50, y: 100, width: 200, height: 20 },
+    computed: {
+      display: 'list-item',
+    },
+    pseudo: {
+      before: pseudoBeforeRoman,
+    },
+    children: [spanContent],
+  };
+
+  const liAlpha = {
+    tag: 'li',
+    rect: { x: 50, y: 150, width: 200, height: 20 },
+    computed: {
+      display: 'list-item',
+    },
+    pseudo: {
+      before: pseudoBeforeAlpha,
+    },
+    children: [spanContent],
+  };
+
+  const ulNode = {
+    tag: 'ul',
+    rect: { x: 50, y: 100, width: 200, height: 100 },
+    computed: {
+      display: 'block',
+    },
+    children: [liRoman, liAlpha],
+  };
+
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 400, height: 200 },
+    children: [ulNode],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtUl = tree.children[0];
+  const builtLi1 = builtUl.children[0];
+  const builtLi2 = builtUl.children[1];
+
+  const pseudoTextNode1 = builtLi1.children[0].children[0];
+  const pseudoTextNode2 = builtLi2.children[0].children[0];
+
+  // Verify Roman is resolved to 'I' (first item)
+  expect(pseudoTextNode1.characters).toBe('I');
+  // Verify lower-latin is resolved to 'b' (second item)
+  expect(pseudoTextNode2.characters).toBe('b');
+});
