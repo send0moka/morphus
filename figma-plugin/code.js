@@ -1609,6 +1609,11 @@ async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
   frame.name = spec.name;
   frame.x = spec.x || 0;
   frame.y = spec.y || 0;
+  if (spec.rotation !== undefined) {
+    try {
+      frame.rotation = spec.rotation;
+    } catch (err) {}
+  }
   frame.resize(Math.max(spec.width || 1, 1), Math.max(spec.height || 1, 1));
   frame.fills = [];
   frame.strokes = [];
@@ -1780,6 +1785,11 @@ async function buildSvgNode(spec, parentLayoutMode, styleRegistry) {
     node.name = spec.name;
     node.x = spec.x || 0;
     node.y = spec.y || 0;
+    if (spec.rotation !== undefined) {
+      try {
+        node.rotation = spec.rotation;
+      } catch (err) {}
+    }
     resizeSceneNode(node, Math.max(spec.width || 1, 1), Math.max(spec.height || 1, 1));
 
     if (spec.opacity !== undefined) {
@@ -1869,6 +1879,11 @@ async function buildMixedTextGroup(spec, styleRegistry) {
   frame.name = spec.name;
   frame.x = spec.x || 0;
   frame.y = spec.y || 0;
+  if (spec.rotation !== undefined) {
+    try {
+      frame.rotation = spec.rotation;
+    } catch (err) {}
+  }
   frame.resize(Math.max(spec.width || 1, 1), Math.max(spec.height || 1, 1));
   frame.fills = [];
   frame.strokes = [];
@@ -1947,6 +1962,11 @@ function applyBaseTextProps(text, spec) {
   text.name = spec.name;
   text.x = spec.x || 0;
   text.y = spec.y || 0;
+  if (spec.rotation !== undefined) {
+    try {
+      text.rotation = spec.rotation;
+    } catch (err) {}
+  }
 
   const fontName = spec.fontName || { family: 'Inter', style: 'Regular' };
   try {
@@ -2056,6 +2076,13 @@ function applyRangeTextDecorationProps(text, start, end, run) {
 function applyTextSizing(text, spec, parentLayoutMode) {
   if (!spec.width) return;
   try {
+    if (spec.rotation !== undefined && Math.abs(spec.rotation) > 0.01) {
+      if (!hasExplicitLineBreaks(spec.characters)) {
+        text.textAutoResize = 'WIDTH_AND_HEIGHT';
+        return;
+      }
+    }
+
     if (spec.textTruncation === 'ENDING') {
       text.textAutoResize = 'NONE';
       text.resize(Math.max(spec.width, 1), Math.max(spec.height || 1, 1));
@@ -2206,6 +2233,11 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
   );
   frame.x = spec.x || 0;
   frame.y = spec.y || 0;
+  if (spec.rotation !== undefined) {
+    try {
+      frame.rotation = spec.rotation;
+    } catch (err) {}
+  }
 
   if (spec.fills && spec.fills.length > 0) frame.fills = spec.fills;
   else frame.fills = [];

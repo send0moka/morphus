@@ -498,7 +498,14 @@ function walkDOMInBrowser() {
       text: renderedText || null,
       textRuns: textData?.runs || [],
       isTextContainer,
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      rect: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        offsetWidth: el.offsetWidth !== undefined ? el.offsetWidth : rect.width,
+        offsetHeight: el.offsetHeight !== undefined ? el.offsetHeight : rect.height,
+      },
       computed: extractRelevantStyles(cs),
       ...(formControl ? { formControl } : {}),
       ...(svgMarkup ? { svgMarkup } : {}),
@@ -1108,6 +1115,7 @@ function walkDOMInBrowser() {
       textDecorationThickness: cs.textDecorationThickness,
       webkitTextStrokeWidth: cs.webkitTextStrokeWidth,
       webkitTextStrokeColor: cs.webkitTextStrokeColor,
+      writingMode: cs.writingMode,
       // Positioning
       top: cs.top,
       right: cs.right,
@@ -1261,6 +1269,7 @@ function walkDOMInBrowser() {
       textDecorationThickness: cs.textDecorationThickness,
       webkitTextStrokeWidth: cs.webkitTextStrokeWidth,
       webkitTextStrokeColor: cs.webkitTextStrokeColor,
+      writingMode: cs.writingMode,
       filter: cs.filter,
     };
   }

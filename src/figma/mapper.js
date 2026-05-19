@@ -54,14 +54,56 @@ function buildNode(node, parentContext, ctx, path) {
   const isAbsolute = isAbsoluteLikeNode(node) || node._layoutPositioning === 'ABSOLUTE';
   const childLayoutSizing = mapChildLayoutSizing(node, parentContext, resolvedRect);
 
+  const transform = computed.transform || 'none';
+  let { rotation } = parseRotationAndScale(transform);
+
+  const writingMode = computed.writingMode || 'horizontal-tb';
+  const isVerticalWritingMode = writingMode.startsWith('vertical-');
+
+  let unrotatedWidth = resolvedRect.width;
+  let unrotatedHeight = resolvedRect.height;
+
+  if (isVerticalWritingMode && Math.abs(rotation) <= 0.01) {
+    rotation = -90;
+    unrotatedWidth = resolvedRect.offsetHeight || resolvedRect.height;
+    unrotatedHeight = resolvedRect.offsetWidth || resolvedRect.width;
+  } else if (Math.abs(rotation) > 0.01) {
+    if (resolvedRect.offsetWidth && resolvedRect.offsetHeight) {
+      unrotatedWidth = resolvedRect.offsetWidth;
+      unrotatedHeight = resolvedRect.offsetHeight;
+    } else if (Math.abs(Math.abs(rotation) - 90) < 5) {
+      unrotatedWidth = resolvedRect.height;
+      unrotatedHeight = resolvedRect.width;
+    }
+  }
+
+  let figmaX = resolvedRect.x - (parentResolvedRect?.x ?? 0);
+  let figmaY = resolvedRect.y - (parentResolvedRect?.y ?? 0);
+
+  if (Math.abs(rotation) > 0.01) {
+    const rad = (rotation * Math.PI) / 180;
+    const cosVal = Math.cos(rad);
+    const sinVal = Math.sin(rad);
+
+    const cx = resolvedRect.x + resolvedRect.width / 2;
+    const cy = resolvedRect.y + resolvedRect.height / 2;
+
+    const absoluteFigmaX = cx - (unrotatedWidth / 2) * cosVal + (unrotatedHeight / 2) * sinVal;
+    const absoluteFigmaY = cy - (unrotatedWidth / 2) * sinVal - (unrotatedHeight / 2) * cosVal;
+
+    figmaX = absoluteFigmaX - (parentResolvedRect?.x ?? 0);
+    figmaY = absoluteFigmaY - (parentResolvedRect?.y ?? 0);
+  }
+
   const base = {
     id: buildStableId(tag, classList, path),
     name: buildName(tag, classList),
     type: isSvg ? 'SVG' : isImage ? 'IMAGE' : (isText && text ? 'TEXT' : 'FRAME'),
-    x: Math.round(resolvedRect.x - (parentResolvedRect?.x ?? 0)),
-    y: Math.round(resolvedRect.y - (parentResolvedRect?.y ?? 0)),
-    width: Math.round(resolvedRect.width),
-    height: Math.round(resolvedRect.height),
+    x: Math.round(figmaX),
+    y: Math.round(figmaY),
+    width: Math.round(unrotatedWidth),
+    height: Math.round(unrotatedHeight),
+    ...(Math.abs(rotation) > 0.01 ? { rotation: roundFloat(rotation, 2) } : {}),
     ...(isAbsolute ? { layoutPositioning: 'ABSOLUTE' } : {}),
     ...childLayoutSizing,
   };
@@ -1897,4 +1939,41 @@ function getLinearGradientAxis(layer) {
     return 'x';
   }
   return 'y';
+}
+
+function parseRotationAndScale(transform) {
+  if (!transform || transform === 'none') {
+    return { rotation: 0, scaleX: 1, scaleY: 1 };
+  }
+
+  const matrixMatch = transform.match(/^matrix\(([^)]+)\)$/i);
+  if (matrixMatch) {
+    const values = matrixMatch[1].split(',').map((part) => parseFloat(part.trim()));
+    if (values.length === 6 && values.every(Number.isFinite)) {
+      const [a, b, c, d] = values;
+      const angleRad = Math.atan2(b, a);
+      const rotation = angleRad * (180 / Math.PI);
+      const scaleX = Math.hypot(a, b);
+      const scaleY = Math.hypot(c, d);
+      return { rotation, scaleX, scaleY };
+    }
+  }
+
+  const matrix3dMatch = transform.match(/^matrix3d\(([^)]+)\)$/i);
+  if (matrix3dMatch) {
+    const values = matrix3dMatch[1].split(',').map((part) => parseFloat(part.trim()));
+    if (values.length === 16 && values.every(Number.isFinite)) {
+      const a = values[0];
+      const b = values[1];
+      const c = values[4];
+      const d = values[5];
+      const angleRad = Math.atan2(b, a);
+      const rotation = angleRad * (180 / Math.PI);
+      const scaleX = Math.hypot(a, b);
+      const scaleY = Math.hypot(c, d);
+      return { rotation, scaleX, scaleY };
+    }
+  }
+
+  return { rotation: 0, scaleX: 1, scaleY: 1 };
 }

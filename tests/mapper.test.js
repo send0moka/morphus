@@ -1611,3 +1611,60 @@ test('uses parent surface fill for transparent pagination controls', () => {
   expect(builtSection.fills).toHaveLength(1);
   expect(builtPagination.fills).toEqual(builtSection.fills);
 });
+
+test('parses computed CSS transform rotation and projects coordinate space correctly', () => {
+  const rotatedText = textContainerNode({
+    tag: 'div',
+    classList: ['vertical-label'],
+    rect: { x: 210, y: 28, width: 22, height: 63, offsetWidth: 63, offsetHeight: 22 },
+    text: 'Vertikal',
+    computed: {
+      display: 'block',
+      transform: 'matrix(0, -1, 1, 0, 0, 0)', // -90 deg rotation
+    },
+  });
+
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 400, height: 200 },
+    children: [rotatedText],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtText = tree.children[0];
+
+  expect(builtText.type).toBe('TEXT');
+  expect(builtText.rotation).toBe(-90);
+  expect(builtText.width).toBe(63);
+  expect(builtText.height).toBe(22);
+  expect(builtText.x).toBe(210);
+  expect(builtText.y).toBe(91);
+});
+test('handles writing-mode vertical layout auto-rotation and swaps dimensions', () => {
+  const verticalText = textContainerNode({
+    tag: 'span',
+    classList: ['writing-vertical'],
+    rect: { x: 50, y: 100, width: 24, height: 120, offsetWidth: 24, offsetHeight: 120 },
+    text: 'Vertikal',
+    computed: {
+      display: 'inline-block',
+      writingMode: 'vertical-rl',
+    },
+  });
+
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 400, height: 200 },
+    children: [verticalText],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtText = tree.children[0];
+
+  expect(builtText.type).toBe('TEXT');
+  expect(builtText.rotation).toBe(-90);
+  expect(builtText.width).toBe(120);
+  expect(builtText.height).toBe(24);
+  expect(builtText.x).toBe(50);
+  expect(builtText.y).toBe(220);
+});
