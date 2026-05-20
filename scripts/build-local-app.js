@@ -287,7 +287,8 @@ function writePackageReadme(packageRoot, currentTarget) {
 3. If macOS blocks the app, right-click it and choose Open.
 4. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
 5. When the plugin is closed, Morphus Converter stays idle in the background.
-6. To stop it, open http://localhost:3210 and click "Shut Down Converter".
+6. To pause conversion, open http://localhost:3210 and click "Shut Down Converter".
+7. To enable conversion again, click "Run Converter" on the same status page.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
 `
@@ -298,8 +299,9 @@ This package includes its own Node runtime and Chromium browser. Users do not ne
 2. A browser status page opens at http://localhost:3210. The converter runs in the background without a Command Prompt window.
 3. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
 4. When the plugin is closed, Morphus Converter stays idle in the background.
-5. To stop it, open http://localhost:3210 and click "Shut Down Converter".
-6. If the background launcher is blocked, open "Morphus Converter Debug.cmd" to see the converter logs.
+5. To pause conversion, open http://localhost:3210 and click "Shut Down Converter".
+6. To enable conversion again, click "Run Converter" on the same status page.
+7. If the background launcher is blocked, open "Morphus Converter Debug.cmd" to see the converter logs.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
 `;

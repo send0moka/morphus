@@ -8,19 +8,17 @@
   "documentAccess": "dynamic-page",
   "permissions": ["currentuser"],
   "networkAccess": {
-    "reasoning": "Morphus connects to the locally installed Morphus Converter to convert HTML into editable Figma layers. It also uses the public fallback converter and font domains when the local converter is unavailable.",
+    "reasoning": "Morphus connects to the locally installed Morphus Converter to convert HTML into editable Figma layers. It also loads font and benchmark resources used by the plugin UI.",
     "allowedDomains": [
       "http://localhost:3210",
       "https://fonts.googleapis.com",
       "https://fonts.gstatic.com",
-      "https://jehian-tempelhtml.hf.space",
       "https://figmaeval.vercel.app"
     ],
     "devAllowedDomains": [
       "http://localhost:3210",
       "https://fonts.googleapis.com",
       "https://fonts.gstatic.com",
-      "https://jehian-tempelhtml.hf.space",
       "https://figmaeval.vercel.app"
     ]
   }

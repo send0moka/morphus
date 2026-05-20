@@ -1,6 +1,6 @@
 # Morphus Converter
 
-Morphus Converter lets each designer run the converter on their own laptop instead of sharing one public Hugging Face server. The Figma plugin checks `http://localhost:3210` first, then falls back to the public server if the converter is not running.
+Morphus Converter lets each designer run the converter on their own laptop instead of sharing one public Hugging Face server. The Figma plugin uses `http://localhost:3210` only; if Morphus Converter is stopped or unreachable, the plugin shows a local-converter error instead of falling back to the public server.
 
 The companion package includes:
 
@@ -56,7 +56,8 @@ The release workflow publishes macOS assets with dot-separated filenames such as
 5. A browser status page opens at `http://localhost:3210`.
 6. Open the Morphus Figma plugin and convert as usual.
 7. Close the Figma plugin when finished. Morphus Converter stays idle in the background.
-8. To fully stop it, open `http://localhost:3210` and click `Shut Down Converter`.
+8. To pause conversion, open `http://localhost:3210` and click `Shut Down Converter`.
+9. To enable conversion again, click `Run Converter` on the same status page.
 
 For smoother company-wide distribution, sign and notarize the `.app` with an Apple Developer ID. Without signing, Gatekeeper warnings are expected.
 
@@ -68,8 +69,9 @@ For smoother company-wide distribution, sign and notarize the `.app` with an App
 4. The converter runs in the background without a Command Prompt window.
 5. Open the Morphus Figma plugin and convert as usual.
 6. Close the Figma plugin when finished. Morphus Converter stays idle in the background.
-7. To fully stop it, open `http://localhost:3210` and click `Shut Down Converter`.
-8. If the background launcher is blocked by Windows policy, open `Morphus Converter Debug.cmd` to run it with visible logs.
+7. To pause conversion, open `http://localhost:3210` and click `Shut Down Converter`.
+8. To enable conversion again, click `Run Converter` on the same status page.
+9. If the background launcher is blocked by Windows policy, open `Morphus Converter Debug.cmd` to run it with visible logs.
 
 Windows users do not need Node.js either; `node.exe` is bundled inside `.runtime/node`.
 
@@ -158,8 +160,8 @@ The build script downloads a Node runtime from `nodejs.org`, installs production
 The plugin behavior:
 
 1. Sends heartbeat to `http://localhost:3210/heartbeat` every 5 seconds while the plugin is open.
-2. Uses Morphus Converter if `http://localhost:3210/health` is reachable.
-3. Falls back to `https://jehian-tempelhtml.hf.space` if Morphus Converter is not reachable.
+2. Uses Morphus Converter if `http://localhost:3210/health` returns a running state.
+3. Shows an error dialog if Morphus Converter is stopped or unreachable. The dialog includes a button for `http://localhost:3210`.
 
 The local server behavior:
 
@@ -167,7 +169,9 @@ The local server behavior:
 2. Runs one conversion at a time by default: `MORPHUS_MAX_CONCURRENT_JOBS=1`.
 3. Queues up to 12 local jobs by default.
 4. Stays idle when there is no plugin heartbeat or active conversion.
-5. Stops only when the user clicks `Shut Down Converter` on the status page, or when `MORPHUS_IDLE_SHUTDOWN_MS` is set to a positive value.
+5. Pauses conversion when the user clicks `Shut Down Converter` on the status page.
+6. Resumes conversion when the user clicks `Run Converter` on the same status page.
+7. Fully exits only when `MORPHUS_IDLE_SHUTDOWN_MS` is set to a positive value and the idle timer fires, or when the OS process is closed.
 
 ## Useful Environment Variables
 

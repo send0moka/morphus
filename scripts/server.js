@@ -21,6 +21,7 @@ const jobQueue = [];
 let activeJobCount = 0;
 let lastHeartbeatAt = Date.now();
 let shutdownStarted = false;
+let converterEnabled = true;
 
 const server = http.createServer(async (req, res) => {
   setCors(res);
@@ -48,9 +49,25 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && path === '/shutdown' && LOCAL_MODE) {
+    converterEnabled = false;
     res.writeHead(202, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, message: 'Morphus local server is shutting down.' }));
-    shutdownServer('manual request');
+    res.end(JSON.stringify({
+      ok: true,
+      running: false,
+      message: 'Morphus Converter is stopped. Click Run Converter to start it again.',
+    }));
+    return;
+  }
+
+  if (req.method === 'POST' && path === '/resume' && LOCAL_MODE) {
+    converterEnabled = true;
+    markHeartbeat();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      running: true,
+      message: 'Morphus Converter is running.',
+    }));
     return;
   }
 
@@ -63,6 +80,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/jobs') {
     try {
       markHeartbeat();
+      if (!converterEnabled) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Morphus Converter is stopped. Open http://localhost:3210 and click Run Converter.',
+        }));
+        return;
+      }
+
       const body = await readJsonBody(req);
       if (!body.html || typeof body.html !== 'string') {
         throw new Error('`html` is required.');
@@ -124,6 +149,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/convert') {
     try {
       markHeartbeat();
+      if (!converterEnabled) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Morphus Converter is stopped. Open http://localhost:3210 and click Run Converter.',
+        }));
+        return;
+      }
+
       const body = await readJsonBody(req);
       if (!body.html || typeof body.html !== 'string') {
         throw new Error('`html` is required.');
@@ -305,7 +338,9 @@ function pruneFinishedJobs() {
 
 function getHealthPayload() {
   return {
-    ok: true,
+    ok: converterEnabled,
+    message: converterEnabled ? 'Morphus Converter is running.' : 'Morphus Converter is stopped. Click Run Converter to start it again.',
+    state: converterEnabled ? (activeJobCount > 0 ? 'converting' : 'idle') : 'stopped',
     host: HOST,
     port: PORT,
     activeJobs: activeJobCount,
@@ -349,15 +384,32 @@ function shutdownServer(reason) {
 
 function renderStatusPage() {
   const payload = getHealthPayload();
+  const isRunning = payload.ok;
   const statusRows = [
-    ['Status', payload.activeJobs > 0 ? 'Converting' : 'Idle and ready'],
-    ['Host', payload.host],
-    ['Port', String(payload.port)],
-    ['Active jobs', String(payload.activeJobs)],
-    ['Queued jobs', String(payload.queuedJobs)],
-    ['Max concurrent jobs', String(payload.maxConcurrentJobs)],
-    ['Background mode', payload.idleShutdownMs > 0 ? `Stops after ${Math.round(payload.idleShutdownMs / 1000)}s idle` : 'Stays running until shut down'],
+    ['status', 'Status', isRunning ? (payload.activeJobs > 0 ? 'Converting' : 'Idle and ready') : 'Stopped'],
+    ['host', 'Host', payload.host],
+    ['port', 'Port', String(payload.port)],
+    ['activeJobs', 'Active jobs', String(payload.activeJobs)],
+    ['queuedJobs', 'Queued jobs', String(payload.queuedJobs)],
+    ['maxConcurrentJobs', 'Max concurrent jobs', String(payload.maxConcurrentJobs)],
+    ['mode', 'Background mode', isRunning
+      ? (payload.idleShutdownMs > 0 ? `Stops after ${Math.round(payload.idleShutdownMs / 1000)}s idle` : 'Stays running until shut down')
+      : 'Paused until Run Converter'],
   ];
+  const action = isRunning ? '/shutdown' : '/resume';
+  const buttonText = isRunning ? 'Shut Down Converter' : 'Run Converter';
+  const heroClass = isRunning ? 'hero' : 'hero stopped';
+  const iconPath = isRunning
+    ? '<path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'
+    : '<path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>';
+  const eyebrow = isRunning ? 'Converter running' : 'Converter stopped';
+  const title = isRunning ? 'Morphus Converter is ready' : 'Morphus Converter is stopped';
+  const description = isRunning
+    ? 'You can close this tab. Morphus Converter will stay idle in the background and wake up when the Figma plugin sends a conversion.'
+    : 'The Figma plugin will pause conversion until you start Morphus Converter again.';
+  const hint = isRunning
+    ? 'Use this when you want the plugin to stop converting.'
+    : 'Start it again before using Convert & Build in Figma.';
 
   return `<!doctype html>
 <html>
@@ -372,9 +424,12 @@ function renderStatusPage() {
     h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: 0; }
     p { color: #b8c0c8; line-height: 1.5; margin: 0; }
     .hero { display: flex; gap: 18px; align-items: flex-start; padding: 22px; border: 1px solid #263039; background: #171b1f; border-radius: 8px; }
+    .hero.stopped { border-color: #3c2930; background: #1b1619; }
     .status-icon { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #ffffff; background: #18a058; box-shadow: 0 0 0 6px rgba(24, 160, 88, 0.18); }
+    .hero.stopped .status-icon { background: #d81722; box-shadow: 0 0 0 6px rgba(216, 23, 34, 0.18); }
     .status-icon svg { width: 28px; height: 28px; }
     .eyebrow { margin: 0 0 4px; color: #6ee7a8; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+    .hero.stopped .eyebrow { color: #ff7a84; }
     table { width: 100%; border-collapse: collapse; margin: 22px 0; background: #171b1f; border: 1px solid #263039; border-radius: 8px; overflow: hidden; }
     td { padding: 12px 14px; border-bottom: 1px solid #263039; }
     tr:last-child td { border-bottom: 0; }
@@ -387,42 +442,92 @@ function renderStatusPage() {
 </head>
 <body>
   <main>
-    <section class="hero">
+    <section class="${heroClass}">
       <div class="status-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none">
-          <path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          ${iconPath}
         </svg>
       </div>
       <div>
-        <p class="eyebrow">Converter running</p>
-        <h1>Morphus Converter is ready</h1>
-        <p>You can close this tab. Morphus Converter will stay idle in the background and wake up when the Figma plugin sends a conversion.</p>
+        <p class="eyebrow" data-state-text="eyebrow">${escapeHtml(eyebrow)}</p>
+        <h1 data-state-text="title">${escapeHtml(title)}</h1>
+        <p data-state-text="description">${escapeHtml(description)}</p>
       </div>
     </section>
     <table>
-      ${statusRows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`).join('')}
+      ${statusRows.map(([key, label, value]) => `<tr><td>${escapeHtml(label)}</td><td data-status-field="${escapeHtml(key)}">${escapeHtml(value)}</td></tr>`).join('')}
     </table>
-    ${LOCAL_MODE ? '<form class="actions" method="post" action="/shutdown"><button type="submit">Shut Down Converter</button><span class="hint">Use this only when you want to fully stop Morphus Converter.</span></form>' : ''}
+    ${LOCAL_MODE ? `<form class="actions" method="post" action="${action}"><button type="submit">${escapeHtml(buttonText)}</button><span class="hint">${escapeHtml(hint)}</span></form>` : ''}
   </main>
   <script>
+    window.name = 'morphus-converter-status';
+
+    const states = {
+      running: {
+        action: '/shutdown',
+        button: 'Shut Down Converter',
+        hint: 'Use this when you want the plugin to stop converting.',
+        eyebrow: 'Converter running',
+        title: 'Morphus Converter is ready',
+        description: 'You can close this tab. Morphus Converter will stay idle in the background and wake up when the Figma plugin sends a conversion.',
+        status: 'Idle and ready',
+        mode: 'Stays running until shut down',
+      },
+      stopped: {
+        action: '/resume',
+        button: 'Run Converter',
+        hint: 'Start it again before using Convert & Build in Figma.',
+        eyebrow: 'Converter stopped',
+        title: 'Morphus Converter is stopped',
+        description: 'The Figma plugin will pause conversion until you start Morphus Converter again.',
+        status: 'Stopped',
+        mode: 'Paused until Run Converter',
+      },
+    };
+
     const form = document.querySelector('form.actions');
     if (form) {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const button = form.querySelector('button');
         const hint = form.querySelector('.hint');
+        const isStarting = form.getAttribute('action') === '/resume';
         button.disabled = true;
-        button.textContent = 'Shutting down...';
+        button.textContent = isStarting ? 'Starting...' : 'Shutting down...';
         try {
-          await fetch('/shutdown', { method: 'POST' });
-          hint.className = 'shutdown-result';
-          hint.textContent = 'Morphus Converter stopped. You can close this tab.';
+          const response = await fetch(form.getAttribute('action'), { method: 'POST' });
+          if (!response.ok) {
+            throw new Error('Request failed');
+          }
+          applyState(isStarting ? 'running' : 'stopped');
         } catch (error) {
           button.disabled = false;
-          button.textContent = 'Shut Down Converter';
-          hint.textContent = 'Could not shut down. Please try again.';
+          button.textContent = isStarting ? 'Run Converter' : 'Shut Down Converter';
+          hint.textContent = 'Could not update Morphus Converter. Please try again.';
         }
       });
+    }
+
+    function applyState(name) {
+      const state = states[name];
+      const hero = document.querySelector('.hero');
+      const button = form.querySelector('button');
+      const hint = form.querySelector('.hint');
+      hero.classList.toggle('stopped', name === 'stopped');
+      form.setAttribute('action', state.action);
+      button.disabled = false;
+      button.textContent = state.button;
+      hint.className = 'hint';
+      hint.textContent = state.hint;
+      document.querySelector('[data-state-text="eyebrow"]').textContent = state.eyebrow;
+      document.querySelector('[data-state-text="title"]').textContent = state.title;
+      document.querySelector('[data-state-text="description"]').textContent = state.description;
+      document.querySelector('[data-status-field="status"]').textContent = state.status;
+      document.querySelector('[data-status-field="mode"]').textContent = state.mode;
+      const icon = document.querySelector('.status-icon svg');
+      icon.innerHTML = name === 'stopped'
+        ? '<path d="M7 7l10 10M17 7 7 17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
+        : '<path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
     }
   </script>
 </body>
@@ -432,7 +537,7 @@ function renderStatusPage() {
 function formatJobError(error) {
   const message = error && error.message ? error.message : String(error);
   if (/waitForLoadState|timeout|timed out/i.test(message)) {
-    return 'Conversion timed out while rendering. The public converter may be busy; please try again in a minute or use a smaller HTML file.';
+    return 'Conversion timed out while rendering. Please try again in a minute or use a smaller HTML file.';
   }
   return message;
 }

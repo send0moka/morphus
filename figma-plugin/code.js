@@ -4,10 +4,10 @@
  */
 
 const LOCAL_CONVERTER_URL = 'http://localhost:3210';
-const PUBLIC_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const DEFAULT_CONVERTER_URL = LOCAL_CONVERTER_URL;
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 const HEARTBEAT_INTERVAL_MS = 5000;
+const CONVERTER_UNAVAILABLE_MESSAGE = `Morphus Converter is not running. Open Morphus Converter from your computer. If the status page is already open, click Run Converter at ${LOCAL_CONVERTER_URL}.`;
 
 figma.showUI(__html__, { width: 420, height: 505 });
 startLocalHeartbeat();
@@ -26,12 +26,17 @@ figma.ui.onmessage = async (msg) => {
       return;
     }
 
+    if (msg.type === 'OPEN_CONVERTER_STATUS') {
+      openConverterStatus();
+      return;
+    }
+
     if (msg.type === 'CONVERT_AND_BUILD') {
       await convertAndBuild(msg.payload);
     }
   } catch (err) {
     const message = formatErrorForDisplay(err);
-    figma.ui.postMessage({ type: 'ERROR', message });
+    figma.ui.postMessage({ type: isConverterUnavailableError(err) ? 'CONVERTER_UNAVAILABLE' : 'ERROR', message });
     console.error('[Morphus]', message, err && err.stack ? err.stack : err);
   }
 };
@@ -42,12 +47,17 @@ function formatErrorForDisplay(err) {
   }
   const text = err.message ? err.message : String(err);
   if (/waitForLoadState|timeout|timed out/i.test(text)) {
-    return 'Conversion timed out while rendering. The public converter may be busy; please try again in a minute or use a smaller HTML file.';
+    return 'Conversion timed out while rendering. Please try again in a minute or use a smaller HTML file.';
   }
   if (err.message) {
     return err.message;
   }
   return text;
+}
+
+function isConverterUnavailableError(err) {
+  const text = err && err.message ? err.message : String(err || '');
+  return /Morphus Converter is not running|Converter is not reachable|Converter is stopped|Health check failed/i.test(text);
 }
 
 async function convertAndBuild(payload) {
@@ -206,20 +216,30 @@ function openBenchmark() {
   });
 }
 
+function openConverterStatus() {
+  if (typeof figma.openExternal === 'function') {
+    figma.openExternal(LOCAL_CONVERTER_URL);
+    return;
+  }
+
+  figma.ui.postMessage({
+    type: 'ERROR',
+    message: `Open ${LOCAL_CONVERTER_URL} in your browser.`,
+  });
+}
+
 async function resolveConverterUrl(preferredUrl) {
-  const candidates = preferredUrl
-    ? [preferredUrl]
-    : [LOCAL_CONVERTER_URL, PUBLIC_CONVERTER_URL];
+  const candidates = [LOCAL_CONVERTER_URL];
   let lastError = null;
 
   for (let index = 0; index < candidates.length; index++) {
     const candidate = candidates[index];
     const isLocal = normalizeServerUrl(candidate) === normalizeServerUrl(LOCAL_CONVERTER_URL);
-    progress(isLocal ? 'Checking local converter...' : 'Checking public converter...', 1);
+    progress(isLocal ? 'Checking Morphus Converter...' : 'Checking converter...', 1);
 
     try {
       await ensureConverterReady(candidate);
-      progress(isLocal ? 'Using local converter.' : 'Using public converter.', 1);
+      progress(isLocal ? 'Using Morphus Converter.' : 'Using converter.', 1);
       return candidate;
     } catch (err) {
       lastError = err;
@@ -236,8 +256,12 @@ async function ensureConverterReady(serverUrl) {
     if (!response.ok) {
       throw new Error(`Health check failed (${response.status})`);
     }
+    const payload = await response.json().catch(() => null);
+    if (payload && payload.ok === false) {
+      throw new Error(payload.message || CONVERTER_UNAVAILABLE_MESSAGE);
+    }
   } catch (err) {
-    throw new Error(`Converter is not reachable at ${normalized}.`);
+    throw new Error(CONVERTER_UNAVAILABLE_MESSAGE);
   }
 }
 
