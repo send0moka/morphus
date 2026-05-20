@@ -3,11 +3,14 @@
  * Figma Plugin main thread - receives HTML or JSON and creates Figma nodes.
  */
 
-// const DEFAULT_CONVERTER_URL = 'http://localhost:3210';
-const DEFAULT_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
+const LOCAL_CONVERTER_URL = 'http://127.0.0.1:3210';
+const PUBLIC_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
+const DEFAULT_CONVERTER_URL = LOCAL_CONVERTER_URL;
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
+const HEARTBEAT_INTERVAL_MS = 5000;
 
 figma.showUI(__html__, { width: 420, height: 505 });
+startLocalHeartbeat();
 
 const DEFAULT_VIEWPORT = { name: 'desktop', label: 'Desktop', width: 1440, height: 900 };
 
@@ -37,18 +40,20 @@ function formatErrorForDisplay(err) {
   if (!err) {
     return 'Unknown Morphus error.';
   }
+  const text = err.message ? err.message : String(err);
+  if (/waitForLoadState|timeout|timed out/i.test(text)) {
+    return 'Conversion timed out while rendering. The public converter may be busy; please try again in a minute or use a smaller HTML file.';
+  }
   if (err.message) {
     return err.message;
   }
-  return String(err);
+  return text;
 }
 
 async function convertAndBuild(payload) {
-  const serverUrl = payload.serverUrl || DEFAULT_CONVERTER_URL;
   const viewports = normalizePayloadViewports(payload);
 
-  progress('Checking converter...', 1);
-  await ensureConverterReady(serverUrl);
+  const serverUrl = await resolveConverterUrl(payload && payload.serverUrl);
 
   if (viewports.length > 1) {
     await convertAndBuildViewports(serverUrl, payload, viewports);
@@ -201,6 +206,29 @@ function openBenchmark() {
   });
 }
 
+async function resolveConverterUrl(preferredUrl) {
+  const candidates = preferredUrl
+    ? [preferredUrl]
+    : [LOCAL_CONVERTER_URL, PUBLIC_CONVERTER_URL];
+  let lastError = null;
+
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    const isLocal = normalizeServerUrl(candidate) === normalizeServerUrl(LOCAL_CONVERTER_URL);
+    progress(isLocal ? 'Checking local converter...' : 'Checking public converter...', 1);
+
+    try {
+      await ensureConverterReady(candidate);
+      progress(isLocal ? 'Using local converter.' : 'Using public converter.', 1);
+      return candidate;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('No converter is reachable.');
+}
+
 async function ensureConverterReady(serverUrl) {
   const normalized = normalizeServerUrl(serverUrl);
   try {
@@ -209,8 +237,21 @@ async function ensureConverterReady(serverUrl) {
       throw new Error(`Health check failed (${response.status})`);
     }
   } catch (err) {
-    throw new Error(`Converter is not reachable at ${normalized}. If this is the public service, wait for it to wake up and try again.`);
+    throw new Error(`Converter is not reachable at ${normalized}.`);
   }
+}
+
+function startLocalHeartbeat() {
+  sendLocalHeartbeat();
+  if (typeof setInterval === 'function') {
+    setInterval(sendLocalHeartbeat, HEARTBEAT_INTERVAL_MS);
+  }
+}
+
+function sendLocalHeartbeat() {
+  try {
+    fetch(`${LOCAL_CONVERTER_URL}/heartbeat`).catch(() => { });
+  } catch (err) { }
 }
 
 async function buildFromSnapshot(data, options = {}) {

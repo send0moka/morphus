@@ -55,6 +55,11 @@ For public use, publish the plugin through Figma Community. For team-only use, p
 - Add request size limits appropriate for your plan and expected HTML files.
 - Treat uploaded HTML as private user data.
 - Keep `allowedDomains` narrow so Figma only permits the converter API domain.
+- Tune converter capacity with environment variables:
+  - `MORPHUS_MAX_CONCURRENT_JOBS=1` is safest for small/free CPU Spaces because each job starts Chromium.
+  - `MORPHUS_MAX_QUEUED_JOBS=30` limits how many users can wait in line before the server returns 429.
+  - `MORPHUS_RENDER_TIMEOUT_MS=120000` and `MORPHUS_JOB_TIMEOUT_MS=150000` prevent stuck renders from holding the server forever.
+  - `MORPHUS_NAVIGATION_TIMEOUT_MS=15000` and `MORPHUS_NETWORK_IDLE_TIMEOUT_MS=5000` keep slow external assets from failing the whole conversion.
 
 ## References
 

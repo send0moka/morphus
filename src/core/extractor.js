@@ -9,22 +9,22 @@ import { existsSync, statSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
+const DEFAULT_RENDER_TIMEOUT_MS = 120000;
+const DEFAULT_NAVIGATION_TIMEOUT_MS = 15000;
+const DEFAULT_NETWORK_IDLE_TIMEOUT_MS = 5000;
+
 /**
  * @param {string} filePath - absolute or relative path to HTML file
  * @param {{ width: number, height: number }} viewport
  * @returns {{ domTree, title: string }}
  */
-export async function extractFromFile(filePath, { width = 1440, height = 900 } = {}) {
+export async function extractFromFile(filePath, { width = 1440, height = 900, renderTimeoutMs = getRenderTimeoutMs() } = {}) {
   const absPath = resolve(filePath);
-  const browser = await chromium.launch({
-    args: ['--disable-web-security']
+  return withBrowser(renderTimeoutMs, async (browser) => {
+    const page = await createPage(browser, { width, height });
+    await gotoPageIfPossible(page, pathToFileURL(absPath).href);
+    return extractFromPage(page);
   });
-  const page = await browser.newPage({ viewport: { width, height } });
-
-  await page.goto(pathToFileURL(absPath).href);
-  const result = await extractFromPage(page);
-  await browser.close();
-  return result;
 }
 
 /**
@@ -32,17 +32,14 @@ export async function extractFromFile(filePath, { width = 1440, height = 900 } =
  * @param {{ width?: number, height?: number, baseUrl?: string | null }} options
  * @returns {{ domTree, title: string }}
  */
-export async function extractFromHtml(html, { width = 1440, height = 900, baseUrl = null } = {}) {
-  const browser = await chromium.launch({
-    args: ['--disable-web-security']
-  });
-  const page = await browser.newPage({ viewport: { width, height } });
-  const htmlWithBase = injectBaseHref(html, normalizeBaseUrl(baseUrl));
+export async function extractFromHtml(html, { width = 1440, height = 900, baseUrl = null, renderTimeoutMs = getRenderTimeoutMs() } = {}) {
+  return withBrowser(renderTimeoutMs, async (browser) => {
+    const page = await createPage(browser, { width, height });
+    const htmlWithBase = injectBaseHref(html, normalizeBaseUrl(baseUrl));
 
-  await page.setContent(htmlWithBase, { waitUntil: 'load' });
-  const result = await extractFromPage(page);
-  await browser.close();
-  return result;
+    await setPageContentIfPossible(page, htmlWithBase);
+    return extractFromPage(page);
+  });
 }
 
 async function extractFromPage(page) {
@@ -55,7 +52,8 @@ async function extractFromPage(page) {
 }
 
 async function stabilizePage(page) {
-  await page.waitForLoadState('networkidle');
+  await waitForLoadStateIfPossible(page, 'load', getNavigationTimeoutMs());
+  await waitForLoadStateIfPossible(page, 'networkidle', getNetworkIdleTimeoutMs());
 
   // Wait for all images to finish loading completely (with a 2-second timeout)
   await page.evaluate(async () => {
@@ -269,6 +267,100 @@ async function stabilizePage(page) {
   });
 
   await waitForCanvasPaint(page);
+}
+
+async function createPage(browser, viewport) {
+  const page = await browser.newPage({ viewport });
+  page.setDefaultTimeout(getNavigationTimeoutMs());
+  page.setDefaultNavigationTimeout(getNavigationTimeoutMs());
+  return page;
+}
+
+async function gotoPageIfPossible(page, href) {
+  try {
+    await page.goto(href, {
+      waitUntil: 'domcontentloaded',
+      timeout: getNavigationTimeoutMs(),
+    });
+  } catch (err) {
+    if (!isTimeoutError(err)) {
+      throw err;
+    }
+  }
+}
+
+async function setPageContentIfPossible(page, html) {
+  try {
+    await page.setContent(html, {
+      waitUntil: 'domcontentloaded',
+      timeout: getNavigationTimeoutMs(),
+    });
+  } catch (err) {
+    if (!isTimeoutError(err)) {
+      throw err;
+    }
+  }
+}
+
+async function withBrowser(renderTimeoutMs, task) {
+  const browser = await chromium.launch({
+    args: ['--disable-web-security']
+  });
+  let timeoutId = null;
+
+  const work = Promise.resolve().then(() => task(browser));
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      safeCloseBrowser(browser);
+      reject(new Error(`Conversion timed out after ${Math.round(renderTimeoutMs / 1000)} seconds while rendering the page.`));
+    }, renderTimeoutMs);
+  });
+
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    await safeCloseBrowser(browser);
+  }
+}
+
+async function safeCloseBrowser(browser) {
+  try {
+    await browser.close();
+  } catch (err) { }
+}
+
+async function waitForLoadStateIfPossible(page, state, timeout) {
+  try {
+    await page.waitForLoadState(state, { timeout });
+  } catch (err) {
+    if (!isTimeoutError(err)) {
+      throw err;
+    }
+  }
+}
+
+function isTimeoutError(err) {
+  return /timeout|timed out/i.test(String(err && err.message ? err.message : err));
+}
+
+function getRenderTimeoutMs() {
+  return getPositiveEnvNumber('MORPHUS_RENDER_TIMEOUT_MS', DEFAULT_RENDER_TIMEOUT_MS);
+}
+
+function getNavigationTimeoutMs() {
+  return getPositiveEnvNumber('MORPHUS_NAVIGATION_TIMEOUT_MS', DEFAULT_NAVIGATION_TIMEOUT_MS);
+}
+
+function getNetworkIdleTimeoutMs() {
+  return getPositiveEnvNumber('MORPHUS_NETWORK_IDLE_TIMEOUT_MS', DEFAULT_NETWORK_IDLE_TIMEOUT_MS);
+}
+
+function getPositiveEnvNumber(name, fallback) {
+  const value = typeof process !== 'undefined' && process.env ? Number.parseInt(process.env[name] || '', 10) : NaN;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 async function waitForCanvasPaint(page) {
