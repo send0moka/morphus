@@ -364,7 +364,7 @@ function renderStatusPage() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Morphus Local</title>
+  <title>Morphus Converter</title>
   <style>
     body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #f5f5f5; background: #111; }
     main { max-width: 560px; margin: 48px auto; padding: 0 20px; }
@@ -378,8 +378,8 @@ function renderStatusPage() {
 </head>
 <body>
   <main>
-    <h1>Morphus Local</h1>
-    <p>The local converter is running. Keep this process open while using the Figma plugin.</p>
+    <h1>Morphus Converter</h1>
+    <p>The converter is running. Keep this process open while using the Figma plugin.</p>
     <table>
       ${statusRows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`).join('')}
     </table>

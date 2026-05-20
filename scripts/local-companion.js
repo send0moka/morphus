@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Starts Morphus as a local companion server.
+ * Starts Morphus Converter as a local companion server.
  *
  * This entrypoint is used by the macOS/Windows portable launchers. It sets
  * local-safe defaults before loading the regular HTTP server.

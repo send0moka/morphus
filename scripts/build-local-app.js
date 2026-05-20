@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds a portable Morphus Local companion package for the current OS.
+ * Builds a portable Morphus Converter package for the current OS.
  *
  * Run this on macOS to produce the .app package, and on Windows to produce
  * the portable Windows folder. Playwright browsers are platform-specific, so
@@ -48,8 +48,8 @@ async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
 
   const name = target === 'macos'
-    ? `Morphus Local macOS ${arch}`
-    : `Morphus Local Windows ${arch}`;
+    ? `Morphus Converter macOS ${arch}`
+    : `Morphus Converter Windows ${arch}`;
   const stageDir = resolve(OUT_DIR, `${slug(name)}-stage`);
   const releaseDir = resolve(OUT_DIR, name);
 
@@ -83,7 +83,7 @@ function getCurrentTarget() {
 
 function createLayout(stageDir, currentTarget) {
   if (currentTarget === 'macos') {
-    const appRoot = join(stageDir, 'Morphus Local.app');
+    const appRoot = join(stageDir, 'Morphus Converter.app');
     const contentsDir = join(appRoot, 'Contents');
     const resourcesDir = join(contentsDir, 'Resources');
     return {
@@ -94,18 +94,18 @@ function createLayout(stageDir, currentTarget) {
       resourcesDir,
       appDir: join(resourcesDir, 'app'),
       runtimeDir: join(resourcesDir, 'node'),
-      launcherPath: join(contentsDir, 'MacOS', 'Morphus Local'),
+      launcherPath: join(contentsDir, 'MacOS', 'Morphus Converter'),
       plistPath: join(contentsDir, 'Info.plist'),
     };
   }
 
-  const packageRoot = join(stageDir, 'Morphus Local');
+  const packageRoot = join(stageDir, 'Morphus Converter');
   return {
     target: currentTarget,
     packageRoot,
     appDir: join(packageRoot, 'app'),
     runtimeDir: join(packageRoot, '.runtime', 'node'),
-    launcherPath: join(packageRoot, 'Morphus Local.cmd'),
+    launcherPath: join(packageRoot, 'Morphus Converter.cmd'),
   };
 }
 
@@ -198,11 +198,11 @@ function getMacInfoPlist() {
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>Morphus Local</string>
+  <string>Morphus Converter</string>
   <key>CFBundleIdentifier</key>
-  <string>com.morphus.local</string>
+  <string>com.morphus.converter</string>
   <key>CFBundleName</key>
-  <string>Morphus Local</string>
+  <string>Morphus Converter</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -242,7 +242,7 @@ set "PLAYWRIGHT_BROWSERS_PATH=%ROOT%app\\browsers"
 "%ROOT%.runtime\\node\\node.exe" "%ROOT%app\\scripts\\local-companion.js"
 if errorlevel 1 (
   echo.
-  echo Morphus Local stopped with an error.
+  echo Morphus Converter stopped with an error.
   pause
 )
 `;
@@ -250,24 +250,24 @@ if errorlevel 1 (
 
 function writePackageReadme(packageRoot, currentTarget) {
   const text = currentTarget === 'macos'
-    ? `Morphus Local for macOS
-========================
+    ? `Morphus Converter for macOS
+============================
 
-1. Move "Morphus Local.app" to Applications or keep it in this folder.
-2. Open "Morphus Local.app".
+1. Move "Morphus Converter.app" to Applications or keep it in this folder.
+2. Open "Morphus Converter.app".
 3. If macOS blocks the app, right-click it and choose Open.
 4. Open the Morphus Figma plugin. The plugin will use http://127.0.0.1:3210 automatically.
-5. When the plugin is closed, Morphus Local exits after about 90 seconds.
+5. When the plugin is closed, Morphus Converter exits after about 90 seconds.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
 `
-    : `Morphus Local for Windows
-=========================
+    : `Morphus Converter for Windows
+=============================
 
-1. Open "Morphus Local.cmd".
+1. Open "Morphus Converter.cmd".
 2. Keep the console window open while using the Morphus Figma plugin.
 3. Open the Morphus Figma plugin. The plugin will use http://127.0.0.1:3210 automatically.
-4. When the plugin is closed, Morphus Local exits after about 90 seconds.
+4. When the plugin is closed, Morphus Converter exits after about 90 seconds.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
 `;
