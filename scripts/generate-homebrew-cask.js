@@ -14,6 +14,7 @@ const tag = args.tag || process.env.MORPHUS_CASK_TAG || `local-companion-v${vers
 const output = args.output || process.env.MORPHUS_CASK_OUTPUT || 'out/homebrew/Casks/morphus-local.rb';
 const armZip = args.armZip || args['arm-zip'] || process.env.MORPHUS_CASK_ARM_ZIP;
 const intelZip = args.intelZip || args['intel-zip'] || process.env.MORPHUS_CASK_INTEL_ZIP;
+const releaseNameStyle = args.releaseNameStyle || args['release-name-style'] || process.env.MORPHUS_CASK_RELEASE_NAME_STYLE || 'dotted';
 
 if (!version) {
   throw new Error('Missing --version.');
@@ -37,6 +38,7 @@ writeFileSync(outputPath, text, 'utf8');
 console.log(`Generated ${output}`);
 
 function renderUniversalCask({ version, repo, tag, shas }) {
+  const zipNameTemplate = releaseZipNameTemplate();
   return `cask "morphus-local" do
   arch arm: "arm64", intel: "x64"
 
@@ -44,7 +46,7 @@ function renderUniversalCask({ version, repo, tag, shas }) {
   sha256 arm:   "${shas.arm}",
          intel: "${shas.intel}"
 
-  url "https://github.com/${repo}/releases/download/${tag}/Morphus%20Local%20macOS%20#{arch}.zip"
+  url "https://github.com/${repo}/releases/download/${tag}/${zipNameTemplate}"
   name "Morphus Local"
   desc "Local converter companion for the Morphus Figma plugin"
   homepage "https://github.com/${repo}"
@@ -57,7 +59,7 @@ end
 }
 
 function renderArmOnlyCask({ version, repo, tag, shas }) {
-  const zipName = basename(armZip).replace(/ /g, '%20');
+  const zipName = releaseZipName('arm64', armZip);
   return `cask "morphus-local" do
   version "${version}"
   sha256 "${shas.arm}"
@@ -78,6 +80,20 @@ end
 
 function sha256File(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function releaseZipNameTemplate() {
+  if (releaseNameStyle === 'original') {
+    return 'Morphus%20Local%20macOS%20#{arch}.zip';
+  }
+  return 'Morphus.Local.macOS.#{arch}.zip';
+}
+
+function releaseZipName(arch, fallbackPath) {
+  if (releaseNameStyle === 'original') {
+    return basename(fallbackPath).replace(/ /g, '%20');
+  }
+  return `Morphus.Local.macOS.${arch}.zip`;
 }
 
 function parseArgs(items) {

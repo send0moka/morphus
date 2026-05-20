@@ -32,6 +32,8 @@ brew reinstall --cask morphus-local
 
 The cask in this repo uses `version :latest` so teammates do not need a cask update for every internal build. For a stricter versioned cask with SHA checksums, use the generated `morphus-local.rb` attached to tag releases.
 
+The release workflow publishes macOS assets with dot-separated filenames such as `Morphus.Local.macOS.arm64.zip`. Keep the committed cask URL in sync with that naming so Homebrew does not hit a 404.
+
 ### Zip
 
 1. Extract `Morphus Local macOS <arch>.zip`.

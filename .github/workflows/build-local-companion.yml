@@ -136,16 +136,23 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets out/homebrew/Casks
           find downloaded-artifacts -name '*.zip' -exec cp {} release-assets/ \;
+          for file in release-assets/*.zip; do
+            clean_name="$(basename "$file" | tr ' ' '.')"
+            if [[ "$(basename "$file")" != "$clean_name" ]]; then
+              mv "$file" "release-assets/$clean_name"
+            fi
+          done
           version="${{ steps.release_meta.outputs.version }}"
           tag="${{ steps.release_meta.outputs.tag }}"
-          arm_zip="$(find release-assets -name 'Morphus Local macOS arm64.zip' | head -n 1)"
-          intel_zip="$(find release-assets -name 'Morphus Local macOS x64.zip' | head -n 1)"
+          arm_zip="$(find release-assets -name 'Morphus.Local.macOS.arm64.zip' | head -n 1)"
+          intel_zip="$(find release-assets -name 'Morphus.Local.macOS.x64.zip' | head -n 1)"
           node scripts/generate-homebrew-cask.js \
             --version "$version" \
             --repo "$GITHUB_REPOSITORY" \
             --tag "$tag" \
             --arm-zip "$arm_zip" \
             --intel-zip "$intel_zip" \
+            --release-name-style dotted \
             --output release-assets/morphus-local.rb
           ls -lh release-assets
 
