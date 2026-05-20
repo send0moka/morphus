@@ -23,7 +23,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-macos:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -36,9 +36,6 @@ jobs:
           - name: macOS Intel
             runner: macos-15-intel
             artifact: morphus-local-macos-x64
-          - name: Windows x64
-            runner: windows-latest
-            artifact: morphus-local-windows-x64
 
     steps:
       - name: Checkout
@@ -63,10 +60,41 @@ jobs:
           path: out/local-app/*.zip
           if-no-files-found: error
 
+  build-windows:
+    name: Windows x64
+    runs-on: windows-2025
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build local companion package
+        run: npm run local-app:build
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: morphus-local-windows-x64
+          path: out/local-app/*.zip
+          if-no-files-found: error
+
   release:
     name: Publish Release
-    if: startsWith(github.ref, 'refs/tags/local-companion-v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
-    needs: build
+    if: always() && needs.build-macos.result == 'success' && (startsWith(github.ref, 'refs/tags/local-companion-v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release))
+    needs:
+      - build-macos
+      - build-windows
     runs-on: ubuntu-latest
 
     steps:

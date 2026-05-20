@@ -69,6 +69,8 @@ The workflow builds:
 - `morphus-local-macos-x64` on a GitHub-hosted macOS Intel runner.
 - `morphus-local-windows-x64` on a GitHub-hosted Windows runner.
 
+The Homebrew release job only requires the macOS builds. Windows is uploaded when it succeeds, but a Windows packaging issue should not block the macOS Homebrew release.
+
 Manual release flow:
 
 1. Push the latest code to GitHub.
@@ -92,7 +94,7 @@ That tag automatically starts the same workflow and publishes a GitHub Release w
 
 - macOS Apple Silicon zip.
 - macOS Intel zip.
-- Windows x64 zip.
+- Windows x64 zip, when the Windows build succeeds.
 - Versioned `morphus-local.rb` Homebrew Cask with SHA checksums.
 
 The committed cask at `Casks/morphus-local.rb` points at the latest release. If you prefer a dedicated Homebrew tap repo later, copy the generated `morphus-local.rb` into a separate `send0moka/homebrew-morphus` repo under `Casks/morphus-local.rb`, then users can run:
