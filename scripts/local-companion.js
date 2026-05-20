@@ -8,7 +8,7 @@
 
 import { spawn } from 'node:child_process';
 
-setDefaultEnv('HOST', '127.0.0.1');
+setDefaultEnv('HOST', 'localhost');
 setDefaultEnv('MORPHUS_PORT', '3210');
 setDefaultEnv('MORPHUS_LOCAL_MODE', '1');
 setDefaultEnv('MORPHUS_MAX_CONCURRENT_JOBS', '1');
@@ -17,7 +17,7 @@ setDefaultEnv('MORPHUS_IDLE_SHUTDOWN_MS', '90000');
 setDefaultEnv('MORPHUS_RENDER_TIMEOUT_MS', '120000');
 setDefaultEnv('MORPHUS_JOB_TIMEOUT_MS', '150000');
 
-const statusUrl = `http://127.0.0.1:${process.env.MORPHUS_PORT || '3210'}/`;
+const statusUrl = `http://localhost:${process.env.MORPHUS_PORT || '3210'}/`;
 
 if (process.env.MORPHUS_OPEN_STATUS_PAGE === '1') {
   const timer = setTimeout(() => {

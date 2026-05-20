@@ -1,6 +1,6 @@
 # Morphus Converter
 
-Morphus Converter lets each designer run the converter on their own laptop instead of sharing one public Hugging Face server. The Figma plugin checks `http://127.0.0.1:3210` first, then falls back to the public server if the converter is not running.
+Morphus Converter lets each designer run the converter on their own laptop instead of sharing one public Hugging Face server. The Figma plugin checks `http://localhost:3210` first, then falls back to the public server if the converter is not running.
 
 The companion package includes:
 
@@ -21,6 +21,8 @@ Everyone needs the current Figma plugin package. This is separate from Morphus C
 4. Choose `Morphus Figma Plugin/manifest.json`.
 
 The old `htmltofigma-v3.zip` plugin should be replaced because it may still point to the public server and may not include the Morphus Converter heartbeat.
+
+If Figma shows `Manifest error: Invalid value for networkAccess` or `Invalid value for allowedDomains`, the user is likely importing an older plugin package. Use a newer `Morphus.Figma.Plugin.zip` that uses `http://localhost:3210` and includes the required `networkAccess.reasoning` field for localhost access.
 
 ## User Flow: macOS
 
@@ -51,7 +53,7 @@ The release workflow publishes macOS assets with dot-separated filenames such as
 2. Move `Morphus Converter.app` to `Applications`, or keep it in the extracted folder.
 3. Open `Morphus Converter.app`.
 4. If macOS blocks it, right-click the app and choose `Open`.
-5. A browser status page opens at `http://127.0.0.1:3210`.
+5. A browser status page opens at `http://localhost:3210`.
 6. Open the Morphus Figma plugin and convert as usual.
 7. Close the Figma plugin when finished. Morphus Converter exits automatically after about 90 seconds.
 
@@ -62,7 +64,7 @@ For smoother company-wide distribution, sign and notarize the `.app` with an App
 1. Extract `Morphus.Converter.Windows.<arch>.zip`.
 2. Open `Morphus Converter.cmd`.
 3. Keep the console window open while using the Figma plugin.
-4. A browser status page opens at `http://127.0.0.1:3210`.
+4. A browser status page opens at `http://localhost:3210`.
 5. Open the Morphus Figma plugin and convert as usual.
 6. Close the Figma plugin when finished. Morphus Converter exits automatically after about 90 seconds.
 
@@ -152,13 +154,13 @@ The build script downloads a Node runtime from `nodejs.org`, installs production
 
 The plugin behavior:
 
-1. Sends heartbeat to `http://127.0.0.1:3210/heartbeat` every 5 seconds while the plugin is open.
-2. Uses Morphus Converter if `http://127.0.0.1:3210/health` is reachable.
+1. Sends heartbeat to `http://localhost:3210/heartbeat` every 5 seconds while the plugin is open.
+2. Uses Morphus Converter if `http://localhost:3210/health` is reachable.
 3. Falls back to `https://jehian-tempelhtml.hf.space` if Morphus Converter is not reachable.
 
 The local server behavior:
 
-1. Accepts only local connections by default: `HOST=127.0.0.1`.
+1. Accepts only local connections by default: `HOST=localhost`.
 2. Runs one conversion at a time by default: `MORPHUS_MAX_CONCURRENT_JOBS=1`.
 3. Queues up to 12 local jobs by default.
 4. Exits after 90 seconds without plugin heartbeat.

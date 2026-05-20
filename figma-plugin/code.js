@@ -3,7 +3,7 @@
  * Figma Plugin main thread - receives HTML or JSON and creates Figma nodes.
  */
 
-const LOCAL_CONVERTER_URL = 'http://127.0.0.1:3210';
+const LOCAL_CONVERTER_URL = 'http://localhost:3210';
 const PUBLIC_CONVERTER_URL = 'https://jehian-tempelhtml.hf.space';
 const DEFAULT_CONVERTER_URL = LOCAL_CONVERTER_URL;
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';

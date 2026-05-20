@@ -219,7 +219,7 @@ function getMacLauncher() {
 set -eu
 
 RESOURCES="$(cd "$(dirname "$0")/../Resources" && pwd)"
-export HOST="127.0.0.1"
+export HOST="localhost"
 export MORPHUS_PORT="3210"
 export MORPHUS_LOCAL_MODE="1"
 export MORPHUS_OPEN_STATUS_PAGE="1"
@@ -233,7 +233,7 @@ function getWindowsLauncher() {
   return `@echo off
 setlocal
 set "ROOT=%~dp0"
-set "HOST=127.0.0.1"
+set "HOST=localhost"
 set "MORPHUS_PORT=3210"
 set "MORPHUS_LOCAL_MODE=1"
 set "MORPHUS_OPEN_STATUS_PAGE=1"
@@ -256,7 +256,7 @@ function writePackageReadme(packageRoot, currentTarget) {
 1. Move "Morphus Converter.app" to Applications or keep it in this folder.
 2. Open "Morphus Converter.app".
 3. If macOS blocks the app, right-click it and choose Open.
-4. Open the Morphus Figma plugin. The plugin will use http://127.0.0.1:3210 automatically.
+4. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
 5. When the plugin is closed, Morphus Converter exits after about 90 seconds.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
@@ -266,7 +266,7 @@ This package includes its own Node runtime and Chromium browser. Users do not ne
 
 1. Open "Morphus Converter.cmd".
 2. Keep the console window open while using the Morphus Figma plugin.
-3. Open the Morphus Figma plugin. The plugin will use http://127.0.0.1:3210 automatically.
+3. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
 4. When the plugin is closed, Morphus Converter exits after about 90 seconds.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
