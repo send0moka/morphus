@@ -41,7 +41,7 @@ See [CHECKLIST.md](CHECKLIST.md) for the list of completed project items.
 To let other people use the plugin without running the local server, deploy the converter as a public HTTPS Node/Playwright service and update the plugin's converter URL. See [docs/deployment.md](docs/deployment.md).
 
 ## Internal Local App
-For office/internal rollout, package Morphus Local Companion so each user runs the converter on their own laptop without installing Node.js. GitHub Actions can build the macOS and Windows zips for you, so you do not need a MacBook locally. See [docs/local-companion.md](docs/local-companion.md).
+For office/internal rollout, package Morphus Local Companion so each user runs the converter on their own laptop without installing Node.js. GitHub Actions can build the macOS and Windows zips for you, and macOS users can install through Homebrew Cask after a GitHub Release is published. See [docs/local-companion.md](docs/local-companion.md).
 
 ## Snapshot Test
 `tests/landing-page/expected-snapshot.json` is the deterministic baseline for `tests/landing-page/input.html`.

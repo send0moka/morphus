@@ -13,6 +13,27 @@ Users do not need to install Node.js.
 
 ## User Flow: macOS
 
+### Homebrew
+
+If the user already has Homebrew:
+
+```bash
+brew tap send0moka/morphus https://github.com/send0moka/morphus.git
+brew install --cask morphus-local
+open -a "Morphus Local"
+```
+
+This installs the latest macOS release asset from GitHub Releases. For an update:
+
+```bash
+brew update
+brew reinstall --cask morphus-local
+```
+
+The cask in this repo uses `version :latest` so teammates do not need a cask update for every internal build. For a stricter versioned cask with SHA checksums, use the generated `morphus-local.rb` attached to tag releases.
+
+### Zip
+
 1. Extract `Morphus Local macOS <arch>.zip`.
 2. Move `Morphus Local.app` to `Applications`, or keep it in the extracted folder.
 3. Open `Morphus Local.app`.
@@ -45,6 +66,7 @@ You do not need to own or borrow a MacBook just to build the macOS package. Push
 The workflow builds:
 
 - `morphus-local-macos-arm64` on a GitHub-hosted macOS Apple Silicon runner.
+- `morphus-local-macos-x64` on a GitHub-hosted macOS Intel runner.
 - `morphus-local-windows-x64` on a GitHub-hosted Windows runner.
 
 Manual release flow:
@@ -53,8 +75,11 @@ Manual release flow:
 2. Open `Actions`.
 3. Choose `Build Local Companion`.
 4. Click `Run workflow`.
-5. Download the artifact zips after the jobs finish.
-6. Share the macOS zip with teammates and the Windows zip with Windows users.
+5. To make Homebrew work immediately, enable `publish_release` and fill `release_version`, for example `0.1.0`.
+6. Download the artifact zips after the jobs finish, or use the published GitHub Release assets.
+7. Share the macOS zip with teammates and the Windows zip with Windows users.
+
+Important: Homebrew uses GitHub Release download URLs. A manual workflow run that only produces artifacts is useful for testing, but Homebrew install works after a release is published.
 
 Tag release flow:
 
@@ -63,9 +88,19 @@ git tag local-companion-v0.1.0
 git push origin local-companion-v0.1.0
 ```
 
-That tag automatically starts the same workflow.
+That tag automatically starts the same workflow and publishes a GitHub Release with:
 
-If you also need an Intel Mac package, add another matrix entry using the `macos-15-intel` runner.
+- macOS Apple Silicon zip.
+- macOS Intel zip.
+- Windows x64 zip.
+- Versioned `morphus-local.rb` Homebrew Cask with SHA checksums.
+
+The committed cask at `Casks/morphus-local.rb` points at the latest release. If you prefer a dedicated Homebrew tap repo later, copy the generated `morphus-local.rb` into a separate `send0moka/homebrew-morphus` repo under `Casks/morphus-local.rb`, then users can run:
+
+```bash
+brew tap send0moka/morphus
+brew install --cask morphus-local
+```
 
 ### Local Build
 
