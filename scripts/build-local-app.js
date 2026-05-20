@@ -105,7 +105,8 @@ function createLayout(stageDir, currentTarget) {
     packageRoot,
     appDir: join(packageRoot, 'app'),
     runtimeDir: join(packageRoot, '.runtime', 'node'),
-    launcherPath: join(packageRoot, 'Morphus Converter.cmd'),
+    launcherPath: join(packageRoot, 'Morphus Converter.vbs'),
+    debugLauncherPath: join(packageRoot, 'Morphus Converter Debug.cmd'),
   };
 }
 
@@ -187,7 +188,8 @@ function writeLauncher(layout) {
     return;
   }
 
-  writeFileSync(layout.launcherPath, getWindowsLauncher(), 'utf8');
+  writeFileSync(layout.launcherPath, getWindowsBackgroundLauncher(), 'utf8');
+  writeFileSync(layout.debugLauncherPath, getWindowsDebugLauncher(), 'utf8');
 }
 
 function getMacInfoPlist() {
@@ -223,13 +225,39 @@ export HOST="localhost"
 export MORPHUS_PORT="3210"
 export MORPHUS_LOCAL_MODE="1"
 export MORPHUS_OPEN_STATUS_PAGE="1"
+export MORPHUS_IDLE_SHUTDOWN_MS="0"
 export PLAYWRIGHT_BROWSERS_PATH="$RESOURCES/app/browsers"
 
 exec "$RESOURCES/node/bin/node" "$RESOURCES/app/scripts/local-companion.js"
 `;
 }
 
-function getWindowsLauncher() {
+function getWindowsBackgroundLauncher() {
+  return `Set shell = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+root = fso.GetParentFolderName(WScript.ScriptFullName)
+
+Set env = shell.Environment("PROCESS")
+env("HOST") = "localhost"
+env("MORPHUS_PORT") = "3210"
+env("MORPHUS_LOCAL_MODE") = "1"
+env("MORPHUS_OPEN_STATUS_PAGE") = "1"
+env("MORPHUS_IDLE_SHUTDOWN_MS") = "0"
+env("PLAYWRIGHT_BROWSERS_PATH") = root & "\\app\\browsers"
+
+nodePath = root & "\\.runtime\\node\\node.exe"
+scriptPath = root & "\\app\\scripts\\local-companion.js"
+command = Quote(nodePath) & " " & Quote(scriptPath)
+
+shell.Run command, 0, False
+
+Function Quote(value)
+  Quote = Chr(34) & value & Chr(34)
+End Function
+`;
+}
+
+function getWindowsDebugLauncher() {
   return `@echo off
 setlocal
 set "ROOT=%~dp0"
@@ -237,6 +265,7 @@ set "HOST=localhost"
 set "MORPHUS_PORT=3210"
 set "MORPHUS_LOCAL_MODE=1"
 set "MORPHUS_OPEN_STATUS_PAGE=1"
+set "MORPHUS_IDLE_SHUTDOWN_MS=0"
 set "PLAYWRIGHT_BROWSERS_PATH=%ROOT%app\\browsers"
 
 "%ROOT%.runtime\\node\\node.exe" "%ROOT%app\\scripts\\local-companion.js"
@@ -257,17 +286,20 @@ function writePackageReadme(packageRoot, currentTarget) {
 2. Open "Morphus Converter.app".
 3. If macOS blocks the app, right-click it and choose Open.
 4. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
-5. When the plugin is closed, Morphus Converter exits after about 90 seconds.
+5. When the plugin is closed, Morphus Converter stays idle in the background.
+6. To stop it, open http://localhost:3210 and click "Shut Down Converter".
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
 `
     : `Morphus Converter for Windows
 =============================
 
-1. Open "Morphus Converter.cmd".
-2. Keep the console window open while using the Morphus Figma plugin.
+1. Open "Morphus Converter.vbs". Windows may show this as "Morphus Converter" if file extensions are hidden.
+2. A browser status page opens at http://localhost:3210. The converter runs in the background without a Command Prompt window.
 3. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
-4. When the plugin is closed, Morphus Converter exits after about 90 seconds.
+4. When the plugin is closed, Morphus Converter stays idle in the background.
+5. To stop it, open http://localhost:3210 and click "Shut Down Converter".
+6. If the background launcher is blocked, open "Morphus Converter Debug.cmd" to see the converter logs.
 
 This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
 `;

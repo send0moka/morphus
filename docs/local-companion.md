@@ -7,7 +7,7 @@ The companion package includes:
 - Node runtime bundled inside the app/folder.
 - Production Morphus server code.
 - Chromium browser downloaded by Playwright.
-- Auto shutdown after the Figma plugin stops sending heartbeat.
+- Background idle mode after the Figma plugin is closed.
 
 Users do not need to install Node.js.
 
@@ -55,18 +55,21 @@ The release workflow publishes macOS assets with dot-separated filenames such as
 4. If macOS blocks it, right-click the app and choose `Open`.
 5. A browser status page opens at `http://localhost:3210`.
 6. Open the Morphus Figma plugin and convert as usual.
-7. Close the Figma plugin when finished. Morphus Converter exits automatically after about 90 seconds.
+7. Close the Figma plugin when finished. Morphus Converter stays idle in the background.
+8. To fully stop it, open `http://localhost:3210` and click `Shut Down Converter`.
 
 For smoother company-wide distribution, sign and notarize the `.app` with an Apple Developer ID. Without signing, Gatekeeper warnings are expected.
 
 ## User Flow: Windows
 
 1. Extract `Morphus.Converter.Windows.<arch>.zip`.
-2. Open `Morphus Converter.cmd`.
-3. Keep the console window open while using the Figma plugin.
-4. A browser status page opens at `http://localhost:3210`.
+2. Open `Morphus Converter.vbs`. If Windows hides file extensions, this may appear as `Morphus Converter`.
+3. A browser status page opens at `http://localhost:3210`.
+4. The converter runs in the background without a Command Prompt window.
 5. Open the Morphus Figma plugin and convert as usual.
-6. Close the Figma plugin when finished. Morphus Converter exits automatically after about 90 seconds.
+6. Close the Figma plugin when finished. Morphus Converter stays idle in the background.
+7. To fully stop it, open `http://localhost:3210` and click `Shut Down Converter`.
+8. If the background launcher is blocked by Windows policy, open `Morphus Converter Debug.cmd` to run it with visible logs.
 
 Windows users do not need Node.js either; `node.exe` is bundled inside `.runtime/node`.
 
@@ -163,8 +166,8 @@ The local server behavior:
 1. Accepts only local connections by default: `HOST=localhost`.
 2. Runs one conversion at a time by default: `MORPHUS_MAX_CONCURRENT_JOBS=1`.
 3. Queues up to 12 local jobs by default.
-4. Exits after 90 seconds without plugin heartbeat.
-5. Keeps running while a conversion is active.
+4. Stays idle when there is no plugin heartbeat or active conversion.
+5. Stops only when the user clicks `Shut Down Converter` on the status page, or when `MORPHUS_IDLE_SHUTDOWN_MS` is set to a positive value.
 
 ## Useful Environment Variables
 
@@ -172,7 +175,7 @@ The local server behavior:
 MORPHUS_PORT=3210
 MORPHUS_MAX_CONCURRENT_JOBS=1
 MORPHUS_MAX_QUEUED_JOBS=12
-MORPHUS_IDLE_SHUTDOWN_MS=90000
+MORPHUS_IDLE_SHUTDOWN_MS=0
 MORPHUS_RENDER_TIMEOUT_MS=120000
 MORPHUS_JOB_TIMEOUT_MS=150000
 PLAYWRIGHT_BROWSERS_PATH=<package>/app/browsers
@@ -182,7 +185,8 @@ The portable launchers already set these values.
 
 ## Limits
 
-- A Figma plugin cannot start a local process by itself. Users still need to open the companion app or command once.
+- A Figma plugin cannot start a local process by itself. Users still need to open the companion app or launcher once.
 - A zip file cannot safely auto-run code immediately after extraction on macOS or Windows.
 - macOS `.app` packages should be signed/notarized before broad internal rollout.
+- Windows Script Host may be disabled by company policy; use `Morphus Converter Debug.cmd` as the fallback launcher in that case.
 - Cross-building is not recommended because Node and Chromium binaries are platform-specific.

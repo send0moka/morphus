@@ -350,13 +350,13 @@ function shutdownServer(reason) {
 function renderStatusPage() {
   const payload = getHealthPayload();
   const statusRows = [
-    ['Status', payload.ok ? 'Running' : 'Unavailable'],
+    ['Status', payload.activeJobs > 0 ? 'Converting' : 'Idle and ready'],
     ['Host', payload.host],
     ['Port', String(payload.port)],
     ['Active jobs', String(payload.activeJobs)],
     ['Queued jobs', String(payload.queuedJobs)],
     ['Max concurrent jobs', String(payload.maxConcurrentJobs)],
-    ['Auto shutdown', payload.idleShutdownMs > 0 ? `${Math.round(payload.idleShutdownMs / 1000)}s after plugin closes` : 'Disabled'],
+    ['Background mode', payload.idleShutdownMs > 0 ? `Stops after ${Math.round(payload.idleShutdownMs / 1000)}s idle` : 'Stays running until shut down'],
   ];
 
   return `<!doctype html>
@@ -366,25 +366,65 @@ function renderStatusPage() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Morphus Converter</title>
   <style>
-    body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #f5f5f5; background: #111; }
-    main { max-width: 560px; margin: 48px auto; padding: 0 20px; }
-    h1 { font-size: 28px; margin: 0 0 8px; }
-    p { color: #b8b8b8; line-height: 1.5; }
-    table { width: 100%; border-collapse: collapse; margin: 24px 0; background: #181818; border: 1px solid #2c2c2c; }
-    td { padding: 12px 14px; border-bottom: 1px solid #2c2c2c; }
-    td:first-child { color: #a8a8a8; width: 45%; }
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; color: #f5f5f5; background: #101214; }
+    main { max-width: 640px; margin: 44px auto; padding: 0 20px; }
+    h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: 0; }
+    p { color: #b8c0c8; line-height: 1.5; margin: 0; }
+    .hero { display: flex; gap: 18px; align-items: flex-start; padding: 22px; border: 1px solid #263039; background: #171b1f; border-radius: 8px; }
+    .status-icon { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #ffffff; background: #18a058; box-shadow: 0 0 0 6px rgba(24, 160, 88, 0.18); }
+    .status-icon svg { width: 28px; height: 28px; }
+    .eyebrow { margin: 0 0 4px; color: #6ee7a8; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+    table { width: 100%; border-collapse: collapse; margin: 22px 0; background: #171b1f; border: 1px solid #263039; border-radius: 8px; overflow: hidden; }
+    td { padding: 12px 14px; border-bottom: 1px solid #263039; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { color: #9ca8b3; width: 44%; }
+    .actions { display: flex; align-items: center; gap: 12px; }
     button { border: 0; border-radius: 8px; padding: 10px 14px; color: white; background: #d81722; font-weight: 700; cursor: pointer; }
+    .hint { color: #9ca8b3; font-size: 13px; }
+    .shutdown-result { color: #6ee7a8; font-size: 13px; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Morphus Converter</h1>
-    <p>The converter is running. Keep this process open while using the Figma plugin.</p>
+    <section class="hero">
+      <div class="status-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Converter running</p>
+        <h1>Morphus Converter is ready</h1>
+        <p>You can close this tab. Morphus Converter will stay idle in the background and wake up when the Figma plugin sends a conversion.</p>
+      </div>
+    </section>
     <table>
       ${statusRows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`).join('')}
     </table>
-    ${LOCAL_MODE ? '<form method="post" action="/shutdown"><button type="submit">Shut Down</button></form>' : ''}
+    ${LOCAL_MODE ? '<form class="actions" method="post" action="/shutdown"><button type="submit">Shut Down Converter</button><span class="hint">Use this only when you want to fully stop Morphus Converter.</span></form>' : ''}
   </main>
+  <script>
+    const form = document.querySelector('form.actions');
+    if (form) {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = form.querySelector('button');
+        const hint = form.querySelector('.hint');
+        button.disabled = true;
+        button.textContent = 'Shutting down...';
+        try {
+          await fetch('/shutdown', { method: 'POST' });
+          hint.className = 'shutdown-result';
+          hint.textContent = 'Morphus Converter stopped. You can close this tab.';
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = 'Shut Down Converter';
+          hint.textContent = 'Could not shut down. Please try again.';
+        }
+      });
+    }
+  </script>
 </body>
 </html>`;
 }
