@@ -206,6 +206,7 @@ function buildNode(node, parentContext, ctx, path) {
     }
   }
   const flexAutoMarginLayout = isFlex ? getFlexAutoMarginLayoutOverride(node, layout) : null;
+
   const nativeControlLayout = getNativeControlLayout(node);
 
   // Check if a grid strategy was provided for this element
@@ -340,6 +341,58 @@ function buildNode(node, parentContext, ctx, path) {
     }))
     .filter((pair) => Boolean(pair.built));
 
+  // Post-build: promote non-layout frames to Auto Layout VERTICAL when ALL flow children
+  // are flex-col SPACE_BETWEEN containers that have no vertical free space but the parent
+  // is taller than the child's content height.
+  // This resolves the slider pattern: size-full wrapper (non-flex) > flex-col justify-between slides.
+  // Only the FIRST (visible) slide uses FILL sizing; remaining slides (off-screen) become ABSOLUTE
+  // so they don't participate in layout division and are hidden by the frame's clipping.
+  if (!isFlex && !isGrid && !isInlineBlock) {
+    const flowPairs = builtChildPairs.filter(p => !isAbsoluteLikeNode(p.source));
+    if (flowPairs.length > 0) {
+      const parentPaddingH = parsePx(computed.paddingLeft ?? '0')
+        + parsePx(computed.paddingRight ?? '0');
+      const parentPaddingV = parsePx(computed.paddingTop ?? '0')
+        + parsePx(computed.paddingBottom ?? '0');
+      const innerW = base.width - parentPaddingH;
+      const innerH = base.height - parentPaddingV;
+      const candidates = flowPairs.filter(({ source: childSrc, built }) =>
+        built?.primaryAxisAlignItems === 'SPACE_BETWEEN' &&
+        built?.layoutMode === 'VERTICAL' &&
+        // Child must fill the parent's full width (confirms it's a block-level full-width card,
+        // not a narrow inline component). This is the key signal that it should fill height too.
+        fillsAxis(built?.width ?? 0, innerW) &&
+        // Child must not be significantly taller than the parent's inner height
+        // (guards against already-overflowing children where FILL would shrink them).
+        (built?.height ?? 0) <= innerH + Math.max(4, innerH * 0.05) &&
+        // Child must have no free vertical space (content-height only, SPACE_BETWEEN has no room).
+        measureFlexFreeSpace(childSrc, getFlowChildren(childSrc), 'VERTICAL') <= 2
+      );
+      if (candidates.length > 0 && candidates.length === flowPairs.length) {
+        // Promote this frame to Auto Layout so the first child can FILL vertically.
+        // We keep FIXED sizing so the frame's own rendered height is preserved.
+        frameNode.layoutMode = 'VERTICAL';
+        frameNode.primaryAxisAlignItems = 'MIN';
+        frameNode.counterAxisAlignItems = 'MIN';
+        frameNode.primaryAxisSizingMode = 'FIXED';
+        frameNode.counterAxisSizingMode = 'FIXED';
+        frameNode.itemSpacing = 0;
+        frameNode.clipsContent = true;
+        candidates.forEach(({ built }, idx) => {
+          if (idx === 0) {
+            // First (active/visible) slide: FILL so SPACE_BETWEEN has room to push button down.
+            built.layoutSizingVertical = 'FILL';
+          } else {
+            // Remaining slides are off-screen slider items. Make them ABSOLUTE and place
+            // them just outside the frame's bottom edge so clip-content hides them cleanly.
+            built.layoutPositioning = 'ABSOLUTE';
+            built.y = base.height;
+          }
+        });
+      }
+    }
+  }
+
   frameNode.children = pseudoBefore
     .concat(childNodes)
     .concat(withFlexAutoMarginGroups(node, builtChildPairs, layout, path))
@@ -376,6 +429,7 @@ function mapChildLayoutSizing(node, parentContext, resolvedRect) {
   const axis = isRowFlexDirection(parentComputed.flexDirection) ? 'HORIZONTAL' : 'VERTICAL';
   const flexGrow = parseFloat(node.computed?.flexGrow);
 
+  // Cross-axis fill: child fills the axis perpendicular to flex direction
   if (axis === 'VERTICAL' && fillsAxis(resolvedRect.width, parentInnerWidth)) {
     result.layoutSizingHorizontal = 'FILL';
   }
@@ -383,6 +437,8 @@ function mapChildLayoutSizing(node, parentContext, resolvedRect) {
     result.layoutSizingVertical = 'FILL';
   }
 
+  // Main-axis fill needs an explicit flex signal. Rendered size equality alone
+  // is ambiguous for media/atomic children and can collapse in Figma auto layout.
   if (Number.isFinite(flexGrow) && flexGrow > 0) {
     if (axis === 'HORIZONTAL') {
       if (!shouldHugSingleTextFlexChild(parentNode, node, axis)) {

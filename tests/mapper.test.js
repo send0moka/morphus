@@ -586,6 +586,79 @@ test('maps captured canvas data to image nodes', () => {
   expect(builtCanvas._objectFit).toBe('fill');
 });
 
+test('keeps single media children fixed on the flex main axis', () => {
+  const mediaNodes = [
+    frameNode({
+      tag: 'img',
+      classList: ['cover'],
+      rect: { x: 0, y: 0, width: 240, height: 120 },
+      imageData: {
+        src: 'data:image/png;base64,aGVsbG8=',
+        alt: 'cover',
+        naturalWidth: 240,
+        naturalHeight: 120,
+      },
+    }),
+    frameNode({
+      tag: 'svg',
+      classList: ['icon'],
+      rect: { x: 0, y: 0, width: 240, height: 120 },
+      svgMarkup: '<svg viewBox="0 0 240 120" xmlns="http://www.w3.org/2000/svg"><path d="M0 60h240"/></svg>',
+    }),
+    frameNode({
+      tag: 'canvas',
+      classList: ['chart'],
+      rect: { x: 0, y: 0, width: 240, height: 120 },
+      imageData: {
+        src: 'data:image/png;base64,aGVsbG8=',
+        alt: '',
+        naturalWidth: 240,
+        naturalHeight: 120,
+      },
+    }),
+    frameNode({
+      tag: 'figure',
+      classList: ['media'],
+      rect: { x: 0, y: 0, width: 240, height: 120 },
+      children: [
+        frameNode({
+          tag: 'img',
+          rect: { x: 0, y: 0, width: 240, height: 120 },
+          imageData: {
+            src: 'data:image/png;base64,aGVsbG8=',
+            alt: '',
+            naturalWidth: 240,
+            naturalHeight: 120,
+          },
+        }),
+      ],
+    }),
+  ];
+
+  for (const media of mediaNodes) {
+    const wrapper = frameNode({
+      tag: 'div',
+      classList: ['wrapper'],
+      rect: { x: 0, y: 0, width: 240, height: 120 },
+      computed: {
+        display: 'flex',
+        flexDirection: 'row',
+      },
+      children: [media],
+    });
+    const body = frameNode({
+      tag: 'body',
+      rect: { x: 0, y: 0, width: 240, height: 120 },
+      children: [wrapper],
+    });
+
+    const [tree] = buildFigmaTree({ annotated: body });
+    const builtMedia = tree.children[0].children[0];
+
+    expect(builtMedia.layoutSizingHorizontal).toBeUndefined();
+  }
+});
+
 test('orders children by effective z-index for Figma layer stacking', () => {
   const low = frameNode({
     tag: 'div',
