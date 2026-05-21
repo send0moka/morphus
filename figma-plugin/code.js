@@ -2055,14 +2055,6 @@ function applyBaseTextProps(text, spec) {
   if (spec.effects && spec.effects.length > 0) {
     applyFrameEffects(text, spec.effects);
   }
-  if (spec.textTruncation) {
-    try {
-      text.textTruncation = spec.textTruncation;
-      if (spec.textTruncation === 'ENDING') {
-        text.maxLines = 1;
-      }
-    } catch (err) { }
-  }
 }
 
 function applyTextRunStyles(text, runs) {
@@ -2155,6 +2147,7 @@ function applyTextSizing(text, spec, parentLayoutMode) {
     if (spec.textTruncation === 'ENDING') {
       text.textAutoResize = 'NONE';
       text.resize(Math.max(spec.width, 1), Math.max(spec.height || 1, 1));
+      applyTextTruncation(text, spec);
       return;
     }
 
@@ -2186,6 +2179,20 @@ function applyTextSizing(text, spec, parentLayoutMode) {
 
     text.textAutoResize = 'HEIGHT';
     text.resize(Math.max(spec.width, 1), Math.max(spec.height || 1, 1));
+  } catch (err) { }
+}
+
+function applyTextTruncation(text, spec) {
+  if (!text || spec?.textTruncation !== 'ENDING') {
+    return;
+  }
+
+  try {
+    text.textTruncation = 'ENDING';
+  } catch (err) { }
+
+  try {
+    text.maxLines = 1;
   } catch (err) { }
 }
 

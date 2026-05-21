@@ -54,6 +54,8 @@ function makeNode(type) {
     },
     async setTextStyleIdAsync(styleId) {
       this.textStyleId = styleId;
+      this.textTruncation = undefined;
+      this.maxLines = undefined;
       this.textDecoration = 'NONE';
       this.textDecorationStyle = undefined;
       this.textDecorationColor = undefined;
@@ -360,10 +362,17 @@ test('keeps explicitly truncated text fixed and enables ending ellipsis', async 
         characters: 'Belanja Iuran Jaminan Kesehatan bagi Peserta PBPU dan BP Kelas 3',
         textTruncation: 'ENDING',
       }),
+      textSpec('p.truncate-style-pair', {
+        y: 24,
+        width: 274,
+        height: 20,
+        characters: 'Text style pair',
+      }),
     ],
   });
 
   const label = page.children[0];
+  expect(label.textStyleId).toBeTruthy();
   expect(label.textTruncation).toBe('ENDING');
   expect(label.maxLines).toBe(1);
   expect(label.textAutoResize).toBe('NONE');
