@@ -13,6 +13,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  renameSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -23,6 +24,7 @@ import { get } from 'node:https';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { build as esbuild } from 'esbuild';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = resolve(ROOT, 'out', 'local-app');
@@ -34,6 +36,7 @@ const PLAYWRIGHT_VERSION = normalizeVersion(
     || PACKAGE.dependencies?.['playwright-core']
     || '1.60.0'
 );
+const INCLUDE_BROWSER = getBooleanEnv('MORPHUS_BUNDLE_BROWSER', false);
 
 const target = getCurrentTarget();
 const arch = normalizeArch(process.arch);
@@ -61,9 +64,10 @@ async function main() {
   mkdirSync(layout.appDir, { recursive: true });
   mkdirSync(layout.runtimeDir, { recursive: true });
 
-  copyAppSources(layout.appDir);
-  installProductionDependencies(layout.appDir);
-  installChromium(layout.appDir);
+  await bundleAppSources(layout.appDir);
+  if (INCLUDE_BROWSER) {
+    installChromium(layout.appDir);
+  }
 
   await installNodeRuntime(layout.runtimeDir);
   writeLauncher(layout);
@@ -109,33 +113,56 @@ function createLayout(stageDir, currentTarget) {
   };
 }
 
-function copyAppSources(appDir) {
-  const entries = [
-    'package.json',
-    'package-lock.json',
-    'scripts',
-    'src',
-  ];
-
-  for (const entry of entries) {
-    const from = resolve(ROOT, entry);
-    const to = join(appDir, entry);
-    cpSync(from, to, {
-      recursive: true,
-      filter: (source) => !shouldSkipCopiedPath(source),
-    });
-  }
-}
-
-function shouldSkipCopiedPath(source) {
-  const normalized = source.replace(/\\/g, '/');
-  return /\/scripts\/build-local-app\.js$/.test(normalized);
-}
-
-function installProductionDependencies(appDir) {
-  run(npmCommand(), ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], {
-    cwd: appDir,
+async function bundleAppSources(appDir) {
+  const outfile = join(appDir, 'local-companion.cjs');
+  await esbuild({
+    entryPoints: [resolve(ROOT, 'scripts', 'local-companion.js')],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    target: `node${NODE_VERSION.split('.')[0]}`,
+    format: 'cjs',
+    minify: true,
+    sourcemap: false,
+    logLevel: 'info',
+    external: [
+      // Playwright resolves browser metadata relative to its package root.
+      'playwright-core',
+    ],
   });
+
+  writeFileSync(join(appDir, 'package.json'), JSON.stringify({
+    name: 'morphus-converter-runtime',
+    version: PACKAGE.version || '0.1.0',
+    private: true,
+    type: 'commonjs',
+    dependencies: {
+      'playwright-core': PACKAGE.dependencies?.['playwright-core'] || `^${PLAYWRIGHT_VERSION}`,
+    },
+  }, null, 2), 'utf8');
+
+  copyRuntimeDependency('playwright-core', appDir);
+}
+
+function copyRuntimeDependency(packageName, appDir) {
+  const sourceDir = resolve(ROOT, 'node_modules', packageName);
+  if (!existsSync(sourceDir)) {
+    throw new Error(`Missing dependency ${packageName}. Run npm ci before building the package.`);
+  }
+
+  const targetDir = join(appDir, 'node_modules', packageName);
+  cpSync(sourceDir, targetDir, {
+    recursive: true,
+    filter: (source) => !shouldSkipRuntimeDependencyPath(source),
+  });
+}
+
+function shouldSkipRuntimeDependencyPath(source) {
+  const normalized = source.replace(/\\/g, '/');
+  return /\/\.github(\/|$)/.test(normalized)
+    || /\/docs(\/|$)/.test(normalized)
+    || /\/types(\/|$)/.test(normalized)
+    || /\/.*\.(md|markdown|map)$/i.test(normalized);
 }
 
 function installChromium(appDir) {
@@ -169,7 +196,25 @@ async function installNodeRuntime(runtimeDir) {
   run('tar', ['-xf', archivePath, '-C', extractDir]);
 
   const extractedRoot = findSingleDirectory(extractDir);
-  copyDirectoryContents(extractedRoot, runtimeDir);
+  copyNodeRuntime(extractedRoot, runtimeDir);
+}
+
+function copyNodeRuntime(extractedRoot, runtimeDir) {
+  mkdirSync(runtimeDir, { recursive: true });
+  if (target === 'windows') {
+    cpSync(join(extractedRoot, 'node.exe'), join(runtimeDir, 'node.exe'));
+  } else {
+    const binDir = join(runtimeDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const nodePath = join(binDir, 'node');
+    cpSync(join(extractedRoot, 'bin', 'node'), nodePath);
+    chmodSync(nodePath, 0o755);
+  }
+
+  const licensePath = join(extractedRoot, 'LICENSE');
+  if (existsSync(licensePath)) {
+    cpSync(licensePath, join(runtimeDir, 'LICENSE'));
+  }
 }
 
 function getNodeArchiveName() {
@@ -225,9 +270,9 @@ export MORPHUS_PORT="3210"
 export MORPHUS_LOCAL_MODE="1"
 export MORPHUS_OPEN_STATUS_PAGE="1"
 export MORPHUS_IDLE_SHUTDOWN_MS="0"
-export PLAYWRIGHT_BROWSERS_PATH="$RESOURCES/app/browsers"
+${getMacBrowserEnv()}
 
-exec "$RESOURCES/node/bin/node" "$RESOURCES/app/scripts/local-companion.js"
+exec "$RESOURCES/node/bin/node" "$RESOURCES/app/local-companion.cjs"
 `;
 }
 
@@ -242,10 +287,10 @@ env("MORPHUS_PORT") = "3210"
 env("MORPHUS_LOCAL_MODE") = "1"
 env("MORPHUS_OPEN_STATUS_PAGE") = "1"
 env("MORPHUS_IDLE_SHUTDOWN_MS") = "0"
-env("PLAYWRIGHT_BROWSERS_PATH") = root & "\\app\\browsers"
+${getWindowsBrowserEnv()}
 
 nodePath = root & "\\.runtime\\node\\node.exe"
-scriptPath = root & "\\app\\scripts\\local-companion.js"
+scriptPath = root & "\\app\\local-companion.cjs"
 command = Quote(nodePath) & " " & Quote(scriptPath)
 
 shell.Run command, 0, False
@@ -265,9 +310,9 @@ set "MORPHUS_PORT=3210"
 set "MORPHUS_LOCAL_MODE=1"
 set "MORPHUS_OPEN_STATUS_PAGE=1"
 set "MORPHUS_IDLE_SHUTDOWN_MS=0"
-set "PLAYWRIGHT_BROWSERS_PATH=%ROOT%app\\browsers"
+${getWindowsDebugBrowserEnv()}
 
-"%ROOT%.runtime\\node\\node.exe" "%ROOT%app\\scripts\\local-companion.js"
+"%ROOT%.runtime\\node\\node.exe" "%ROOT%app\\local-companion.cjs"
 if errorlevel 1 (
   echo.
   echo Morphus Converter stopped with an error.
@@ -276,7 +321,33 @@ if errorlevel 1 (
 `;
 }
 
+function getMacBrowserEnv() {
+  if (INCLUDE_BROWSER) {
+    return 'export PLAYWRIGHT_BROWSERS_PATH="$RESOURCES/app/browsers"';
+  }
+  return `export MORPHUS_BROWSER_CHANNEL="${getDefaultBrowserChannel()}"`;
+}
+
+function getWindowsBrowserEnv() {
+  if (INCLUDE_BROWSER) {
+    return 'env("PLAYWRIGHT_BROWSERS_PATH") = root & "\\app\\browsers"';
+  }
+  return `env("MORPHUS_BROWSER_CHANNEL") = "${getDefaultBrowserChannel()}"`;
+}
+
+function getWindowsDebugBrowserEnv() {
+  if (INCLUDE_BROWSER) {
+    return 'set "PLAYWRIGHT_BROWSERS_PATH=%ROOT%app\\browsers"';
+  }
+  return `set "MORPHUS_BROWSER_CHANNEL=${getDefaultBrowserChannel()}"`;
+}
+
+function getDefaultBrowserChannel() {
+  return target === 'windows' ? 'msedge' : 'chrome';
+}
+
 function writePackageReadme(packageRoot, currentTarget) {
+  const runtimeText = getRuntimeReadmeText(currentTarget);
   const text = currentTarget === 'macos'
     ? `Morphus Converter for macOS
 ============================
@@ -289,7 +360,7 @@ function writePackageReadme(packageRoot, currentTarget) {
 6. To pause conversion, open http://localhost:3210 and click "Shut Down Converter".
 7. To enable conversion again, click "Run Converter" on the same status page.
 
-This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
+${runtimeText}
 `
     : `Morphus Converter for Windows
 =============================
@@ -302,18 +373,26 @@ This package includes its own Node runtime and Chromium browser. Users do not ne
 6. To enable conversion again, click "Run Converter" on the same status page.
 7. If the background launcher is blocked, open "Morphus Converter Debug.cmd" to see the converter logs.
 
-This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.
+${runtimeText}
 `;
 
   writeFileSync(join(packageRoot, 'README.txt'), text, 'utf8');
 }
 
-function renameStage(stageDir, releaseDir) {
-  mkdirSync(releaseDir, { recursive: true });
-  for (const inner of readdirSync(stageDir)) {
-    cpSync(join(stageDir, inner), join(releaseDir, inner), { recursive: true });
+function getRuntimeReadmeText(currentTarget) {
+  if (INCLUDE_BROWSER) {
+    return 'This package includes its own Node runtime and Chromium browser. Users do not need to install Node.js.';
   }
-  rmSync(stageDir, { recursive: true, force: true });
+
+  if (currentTarget === 'windows') {
+    return 'This slim package includes its own Node runtime and uses the Microsoft Edge browser already included with Windows. Users do not need to install Node.js.';
+  }
+
+  return 'This slim package includes its own Node runtime and uses an installed Google Chrome browser. Users do not need to install Node.js.';
+}
+
+function renameStage(stageDir, releaseDir) {
+  renameSync(stageDir, releaseDir);
 }
 
 function createArchive(releaseDir, name, currentTarget) {
@@ -420,12 +499,16 @@ function normalizeVersion(value) {
   return String(value || '').replace(/^[^\d]*/, '') || '1.60.0';
 }
 
-function slug(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function getBooleanEnv(name, fallback) {
+  const value = process.env[name];
+  if (value === undefined || value === '') {
+    return fallback;
+  }
+  return /^(1|true|yes|on)$/i.test(value);
 }
 
-function npmCommand() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function slug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function npxCommand() {

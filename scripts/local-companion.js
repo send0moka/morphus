@@ -21,21 +21,28 @@ setDefaultEnv('MORPHUS_JOB_TIMEOUT_MS', '150000');
 const statusUrl = `http://localhost:${process.env.MORPHUS_PORT || '3210'}/`;
 const healthUrl = `${statusUrl}health`;
 
-if (process.env.MORPHUS_OPEN_STATUS_PAGE === '1') {
-  if (await isServerAlreadyRunning(healthUrl)) {
-    openExternal(statusUrl);
-    process.exit(0);
+main().catch((error) => {
+  console.error(error && error.stack ? error.stack : error);
+  process.exit(1);
+});
+
+async function main() {
+  if (process.env.MORPHUS_OPEN_STATUS_PAGE === '1') {
+    if (await isServerAlreadyRunning(healthUrl)) {
+      openExternal(statusUrl);
+      process.exit(0);
+    }
+
+    const timer = setTimeout(() => {
+      openExternal(statusUrl);
+    }, 800);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
   }
 
-  const timer = setTimeout(() => {
-    openExternal(statusUrl);
-  }, 800);
-  if (typeof timer.unref === 'function') {
-    timer.unref();
-  }
+  await import('./server.js');
 }
-
-await import('./server.js');
 
 function setDefaultEnv(name, value) {
   if (!process.env[name]) {

@@ -179,7 +179,16 @@ Output:
 out/local-app/Morphus Converter Windows x64.zip
 ```
 
-The build script downloads a Node runtime from `nodejs.org`, installs production dependencies, installs Chromium into the app package, then creates the zip.
+The default build creates a slim package: Morphus code is bundled with esbuild, the Node runtime is copied without npm/corepack, and Chromium is not bundled. On Windows this uses the built-in Microsoft Edge browser; on macOS this uses an installed Google Chrome browser.
+
+To build the older fully offline package with Chromium included:
+
+```powershell
+$env:MORPHUS_BUNDLE_BROWSER = "1"
+npm run converter:build
+```
+
+The offline package is much larger because Chromium is several hundred MB after extraction.
 
 ## Runtime Behavior
 
@@ -208,7 +217,9 @@ MORPHUS_MAX_QUEUED_JOBS=12
 MORPHUS_IDLE_SHUTDOWN_MS=0
 MORPHUS_RENDER_TIMEOUT_MS=120000
 MORPHUS_JOB_TIMEOUT_MS=150000
-PLAYWRIGHT_BROWSERS_PATH=<package>/app/browsers
+MORPHUS_BROWSER_CHANNEL=msedge
+MORPHUS_CHROMIUM_EXECUTABLE_PATH=<optional absolute browser path>
+PLAYWRIGHT_BROWSERS_PATH=<offline package>/app/browsers
 ```
 
 The portable launchers already set these values.

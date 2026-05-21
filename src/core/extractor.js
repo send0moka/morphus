@@ -610,9 +610,7 @@ async function setPageContentIfPossible(page, html) {
 }
 
 async function withBrowser(renderTimeoutMs, task) {
-  const browser = await chromium.launch({
-    args: ['--disable-web-security']
-  });
+  const browser = await chromium.launch(createBrowserLaunchOptions());
   let timeoutId = null;
 
   const work = Promise.resolve().then(() => task(browser));
@@ -631,6 +629,30 @@ async function withBrowser(renderTimeoutMs, task) {
     }
     await safeCloseBrowser(browser);
   }
+}
+
+function createBrowserLaunchOptions() {
+  const launchOptions = {
+    args: ['--disable-web-security'],
+  };
+
+  const executablePath = getTrimmedEnv('MORPHUS_CHROMIUM_EXECUTABLE_PATH');
+  const channel = getTrimmedEnv('MORPHUS_BROWSER_CHANNEL');
+
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
+  } else if (channel) {
+    launchOptions.channel = channel;
+  }
+
+  return launchOptions;
+}
+
+function getTrimmedEnv(name) {
+  if (typeof process === 'undefined' || !process.env) {
+    return '';
+  }
+  return String(process.env[name] || '').trim();
 }
 
 async function safeCloseBrowser(browser) {
