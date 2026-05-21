@@ -2432,6 +2432,11 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
   else frame.fills = [];
 
   if (spec.opacity !== undefined) frame.opacity = spec.opacity;
+  if (spec.layoutPositioning) {
+    try {
+      frame.layoutPositioning = spec.layoutPositioning;
+    } catch (err) { }
+  }
   applyChildLayoutSizing(frame, spec);
 
   if (spec.paddingTop !== undefined) frame.paddingTop = spec.paddingTop;
@@ -2502,6 +2507,12 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
         try {
           child.layoutPositioning = 'ABSOLUTE';
         } catch (err) { }
+        if (Number.isFinite(childSpec.x)) {
+          child.x = childSpec.x;
+        }
+        if (Number.isFinite(childSpec.y)) {
+          child.y = childSpec.y;
+        }
       }
     }
   }

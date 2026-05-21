@@ -676,6 +676,7 @@ test('honors explicit auto-layout sizing modes from the snapshot', async () => {
         children: [
           frameSpec('div.first', {
             y: 24,
+            x: 88,
             width: 120,
             height: 30,
             layoutPositioning: 'ABSOLUTE',
@@ -691,6 +692,8 @@ test('honors explicit auto-layout sizing modes from the snapshot', async () => {
   expect(frame.layoutSizingVertical).toBe('FIXED');
   expect(frame.layoutSizingHorizontal).toBe('FIXED');
   expect(frame.children[0].layoutPositioning).toBe('ABSOLUTE');
+  expect(frame.children[0].x).toBe(88);
+  expect(frame.children[0].y).toBe(24);
 });
 
 test('applies child fill sizing from the snapshot', async () => {

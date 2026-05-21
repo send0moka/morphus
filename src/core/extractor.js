@@ -104,6 +104,10 @@ async function stabilizePage(page) {
         return false;
       }
 
+      if (isInsideInactiveDisclosure(el)) {
+        return false;
+      }
+
       if (cs.position === 'fixed') {
         return false;
       }
@@ -118,6 +122,19 @@ async function stabilizePage(page) {
 
       const rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
+    }
+
+    function isInsideInactiveDisclosure(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) {
+        return false;
+      }
+
+      return Boolean(el.closest([
+        '[data-active="false"]',
+        '[data-open="false"]',
+        '[data-expanded="false"]',
+        '[data-state="closed"]',
+      ].join(',')));
     }
 
     function hasLiveOrProgressSemantics(el) {

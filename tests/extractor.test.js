@@ -119,6 +119,45 @@ test('still reveals safe entry-animation content', async () => {
   expect(headline.computed.transform).toBe('none');
 }, 30000);
 
+test('does not reveal inactive disclosure dropdown panels', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; }
+      .dropdown { position: relative; width: 160px; height: 40px; }
+      .trigger { width: 80px; height: 32px; background: #ffffff; }
+      .panel {
+        position: absolute;
+        top: 40px;
+        left: 0;
+        width: 120px;
+        height: 64px;
+        opacity: 0;
+        transition: opacity 200ms ease;
+        background: #ffffff;
+      }
+      .option { height: 32px; }
+    </style>
+    <div class="dropdown" data-active="false">
+      <button class="trigger">IND</button>
+      <div class="panel">
+        <button class="option">IND</button>
+        <button class="option">ENG</button>
+      </div>
+    </div>
+  `, {
+    width: 240,
+    height: 160,
+  });
+
+  const trigger = find(domTree, (node) => node.classList?.includes('trigger'));
+  const panel = find(domTree, (node) => node.classList?.includes('panel'));
+  const option = find(domTree, (node) => node.classList?.includes('option'));
+
+  expect(trigger).toBeTruthy();
+  expect(panel).toBeNull();
+  expect(option).toBeNull();
+}, 30000);
+
 test('preserves structured interactive children instead of collapsing them into text', async () => {
   const { domTree } = await extractFromFile('./tests/landing-page/input.html', {
     width: 1440,
