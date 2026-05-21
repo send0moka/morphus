@@ -1498,7 +1498,7 @@ test('stretches ratio-based work visuals to the full card height', () => {
   expect(builtTag.y).toBe(30);
 });
 
-test('maps table-cell text to auto-width single-line text', () => {
+test('truncates table-cell text to the cell content width', () => {
   const label = textContainerNode({
     tag: 'span',
     rect: { x: 14, y: 11, width: 720, height: 20 },
@@ -1540,9 +1540,61 @@ test('maps table-cell text to auto-width single-line text', () => {
 
   expect(builtLabel.type).toBe('TEXT');
   expect(builtLabel.x).toBe(14);
-  expect(builtLabel.width).toBe(720);
-  expect(builtLabel.textTruncation).toBeUndefined();
-  expect(builtLabel.whiteSpace).toBe('nowrap');
+  expect(builtLabel.width).toBe(274);
+  expect(builtLabel.textTruncation).toBe('ENDING');
+  expect(builtLabel.whiteSpace).toBeUndefined();
+});
+
+test('truncates div-based row cell text to the cell content width', () => {
+  const label = textContainerNode({
+    tag: 'span',
+    rect: { x: 18, y: 12, width: 440, height: 20 },
+    text: 'RUMAH SAKIT UMUM DAERAH BANYUMAS',
+    computed: {
+      display: 'inline',
+      whiteSpace: 'nowrap',
+      textOverflow: 'clip',
+      overflow: 'visible',
+      overflowX: 'visible',
+      fontSize: '20px',
+    },
+  });
+
+  const cell = frameNode({
+    tag: 'div',
+    classList: ['cell', 'satuan-kerja'],
+    rect: { x: 0, y: 0, width: 260, height: 44 },
+    computed: {
+      display: 'block',
+      paddingLeft: '18px',
+      paddingRight: '16px',
+    },
+    children: [label],
+  });
+
+  const row = frameNode({
+    tag: 'div',
+    classList: ['row'],
+    rect: { x: 0, y: 0, width: 700, height: 44 },
+    computed: {
+      display: 'grid',
+    },
+    children: [cell],
+  });
+
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 700, height: 44 },
+    children: [row],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtLabel = tree.children[0].children[0].children[0];
+
+  expect(builtLabel.type).toBe('TEXT');
+  expect(builtLabel.x).toBe(18);
+  expect(builtLabel.width).toBe(226);
+  expect(builtLabel.textTruncation).toBe('ENDING');
 });
 
 test('clips scrollable overflow containers without class-specific rules', () => {

@@ -53,8 +53,8 @@ function buildNode(node, parentContext, ctx, path) {
   const parentResolvedRect = parentContext?.resolvedRect ?? null;
   const isLeafText = Boolean(text) && children.length === 0;
   const isText = isLeafText && Boolean(isTextContainer);
-  const usesTableCellAutoWidth = Boolean(parentContext?.tableCellAutoWidth) || isTableCellNode(node) || isTableCellNode(parentContext?.sourceNode);
-  const inheritedTextTruncationContext = usesTableCellAutoWidth ? null : getInheritedTextTruncationContext(parentContext);
+  const tableCellTextTruncationContext = getTableCellTextTruncationContext(node, parentContext, rawResolvedRect);
+  const inheritedTextTruncationContext = tableCellTextTruncationContext || getInheritedTextTruncationContext(parentContext);
   const resolvedRect = isText && inheritedTextTruncationContext
     ? clampRectToTextTruncationContext(rawResolvedRect, inheritedTextTruncationContext)
     : rawResolvedRect;
@@ -146,9 +146,7 @@ function buildNode(node, parentContext, ctx, path) {
 
   if (base.type === 'TEXT') {
     const typography = mapTypography(computed, ctx.fontMap, parentContext?.sourceNode?.computed);
-    if (usesTableCellAutoWidth) {
-      forceAutoWidthTableCellText(typography);
-    } else if (inheritedTextTruncationContext && !typography.textTruncation) {
+    if (inheritedTextTruncationContext && !typography.textTruncation) {
       typography.textTruncation = 'ENDING';
     }
 
@@ -284,17 +282,17 @@ function buildNode(node, parentContext, ctx, path) {
 
   // Recurse
   const childNodes = [];
-  const childTextTruncationContext = usesTableCellAutoWidth ? null : getChildTextTruncationContext(node, resolvedRect, inheritedTextTruncationContext);
+  const childTextTruncationContext = getChildTextTruncationContext(node, resolvedRect, inheritedTextTruncationContext);
 
   if (isLeafText) {
-    const textNode = buildEmbeddedTextNode(node, ctx, `${path}.text`, resolvedRect, 'text', childTextTruncationContext, usesTableCellAutoWidth);
+    const textNode = buildEmbeddedTextNode(node, ctx, `${path}.text`, resolvedRect, 'text', childTextTruncationContext);
     if (parentContext?.sourceNode?.tag === 'li' && parentContext?.parentLayout?.layoutMode === 'HORIZONTAL') {
       textNode._forceAutoWidth = true;
     }
     childNodes.push(textNode);
   }
 
-  const controlTextNode = buildFormControlTextNode(node, ctx, `${path}.control`, resolvedRect, childTextTruncationContext, usesTableCellAutoWidth);
+  const controlTextNode = buildFormControlTextNode(node, ctx, `${path}.control`, resolvedRect, childTextTruncationContext);
   if (controlTextNode) {
     childNodes.push(controlTextNode);
   }
@@ -336,7 +334,6 @@ function buildNode(node, parentContext, ctx, path) {
           resolvedRect,
           sourceNode: node,
           textTruncationContext: childTextTruncationContext,
-          tableCellAutoWidth: usesTableCellAutoWidth,
           surfaceFills: nextSurfaceFills,
           parentLayout: layout,
         }, ctx, `${path}.${index}`),
@@ -626,7 +623,7 @@ function shouldPseudoParticipateInParentLayout(node, pseudo, layout = null) {
   return position !== 'absolute' && position !== 'fixed';
 }
 
-function buildFormControlTextNode(node, ctx, path, resolvedRect = null, textTruncationContext = null, tableCellAutoWidth = false) {
+function buildFormControlTextNode(node, ctx, path, resolvedRect = null, textTruncationContext = null) {
   const rendered = resolveFormControlText(node.formControl);
   if (!rendered) {
     return null;
@@ -651,8 +648,7 @@ function buildFormControlTextNode(node, ctx, path, resolvedRect = null, textTrun
     path,
     resolvedRect,
     rendered.kind,
-    textTruncationContext,
-    tableCellAutoWidth
+    textTruncationContext
   );
 }
 
@@ -904,7 +900,7 @@ function roundFloat(value, precision = 4) {
   return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
-function buildEmbeddedTextNode(node, ctx, path, resolvedRect = null, nameSuffix = 'text', textTruncationContext = null, tableCellAutoWidth = false) {
+function buildEmbeddedTextNode(node, ctx, path, resolvedRect = null, nameSuffix = 'text', textTruncationContext = null) {
   const { computed, rect, tag, text, textRuns = [], classList } = node;
   const insetX = parsePx(computed.paddingLeft);
   const insetY = parsePx(computed.paddingTop);
@@ -919,9 +915,7 @@ function buildEmbeddedTextNode(node, ctx, path, resolvedRect = null, nameSuffix 
     ? clampRectToTextTruncationContext(initialTextRect, textTruncationContext)
     : initialTextRect;
   const typography = mapTypography(computed, ctx.fontMap, node.computed);
-  if (tableCellAutoWidth) {
-    forceAutoWidthTableCellText(typography);
-  } else if (textTruncationContext && !typography.textTruncation) {
+  if (textTruncationContext && !typography.textTruncation) {
     typography.textTruncation = 'ENDING';
   }
 
@@ -941,22 +935,68 @@ function buildEmbeddedTextNode(node, ctx, path, resolvedRect = null, nameSuffix 
   };
 }
 
-function forceAutoWidthTableCellText(typography) {
-  if (!typography) {
-    return;
-  }
-
-  delete typography.textTruncation;
-  typography.whiteSpace = 'nowrap';
-}
-
 function isTableCellNode(node) {
   const tag = String(node?.tag || '').toLowerCase();
   if (tag === 'td' || tag === 'th') {
     return true;
   }
 
-  return String(node?.computed?.display || '').toLowerCase() === 'table-cell';
+  if (String(node?.computed?.display || '').toLowerCase() === 'table-cell') {
+    return true;
+  }
+
+  const identity = `${node?.id || ''} ${(node?.classList || []).join(' ')}`.toLowerCase();
+  return /(?:^|[\s_-])(?:cell|table-cell|td|th)(?:$|[\s_-])/.test(identity);
+}
+
+function isTableRowNode(node) {
+  const tag = String(node?.tag || '').toLowerCase();
+  if (tag === 'tr') {
+    return true;
+  }
+
+  if (String(node?.computed?.display || '').toLowerCase() === 'table-row') {
+    return true;
+  }
+
+  const identity = `${node?.id || ''} ${(node?.classList || []).join(' ')}`.toLowerCase();
+  return /(?:^|[\s_-])(?:row|table-row|data-row)(?:$|[\s_-])/.test(identity);
+}
+
+function isLikelyRowCellNode(node, parentNode) {
+  if (!node || !parentNode || !isTableRowNode(parentNode)) {
+    return false;
+  }
+
+  const nodeRect = node.rect || {};
+  const parentRect = parentNode.rect || {};
+  const width = Number(nodeRect.width);
+  const parentWidth = Number(parentRect.width);
+  const height = Number(nodeRect.height);
+  const parentHeight = Number(parentRect.height);
+
+  return Number.isFinite(width)
+    && Number.isFinite(parentWidth)
+    && width > 0
+    && parentWidth > 0
+    && width <= parentWidth * 0.98
+    && (!Number.isFinite(height) || !Number.isFinite(parentHeight) || height <= parentHeight * 1.2);
+}
+
+function getTableCellTextTruncationContext(node, parentContext, rect) {
+  const parentNode = parentContext?.sourceNode;
+  if (!isTableCellNode(node) && !isTableCellNode(parentNode) && !isLikelyRowCellNode(node, parentNode)) {
+    return null;
+  }
+
+  const sourceNode = isTableCellNode(node) || isLikelyRowCellNode(node, parentNode)
+    ? node
+    : parentNode;
+  const sourceRect = isTableCellNode(node) || isLikelyRowCellNode(node, parentNode)
+    ? rect
+    : parentContext?.resolvedRect;
+
+  return createTextTruncationContext(sourceRect, sourceNode?.computed);
 }
 
 function getInheritedTextTruncationContext(parentContext) {
