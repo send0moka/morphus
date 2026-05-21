@@ -328,7 +328,14 @@ function createArchive(releaseDir, name, currentTarget) {
     return;
   }
 
-  run('tar', ['-a', '-cf', zipPath, '-C', releaseDir, '.']);
+  run('powershell', [
+    '-NoProfile',
+    '-Command',
+    [
+      'Add-Type -AssemblyName System.IO.Compression.FileSystem;',
+      `[System.IO.Compression.ZipFile]::CreateFromDirectory(${quotePowerShell(releaseDir)}, ${quotePowerShell(zipPath)}, [System.IO.Compression.CompressionLevel]::Optimal, $false);`,
+    ].join(' '),
+  ]);
   console.log(`Created ${zipPath}`);
 }
 
