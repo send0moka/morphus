@@ -208,6 +208,50 @@ test('keeps original flex stacks as flow auto-layout without forcing children ab
   expect(tree.children[0].children[3].y).toBe(695);
 });
 
+test('maps flex reverse containers in visual order', () => {
+  const slideList = frameNode({
+    tag: 'div',
+    classList: ['slick-list'],
+    rect: { x: 28, y: 72, width: 385, height: 500 },
+  });
+  const dots = frameNode({
+    tag: 'ul',
+    classList: ['slick-dots'],
+    rect: { x: 28, y: 28, width: 385, height: 16 },
+  });
+  const panel = frameNode({
+    tag: 'div',
+    classList: ['event-panel'],
+    rect: { x: 0, y: 0, width: 441, height: 600 },
+    computed: {
+      display: 'flex',
+      flexDirection: 'column-reverse',
+      justifyContent: 'flex-end',
+      rowGap: '28px',
+      paddingTop: '28px',
+      paddingRight: '28px',
+      paddingBottom: '28px',
+      paddingLeft: '28px',
+    },
+    children: [slideList, dots],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 441, height: 600 },
+    children: [panel],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtPanel = tree.children[0];
+
+  expect(builtPanel.layoutMode).toBe('VERTICAL');
+  expect(builtPanel.primaryAxisAlignItems).toBe('MIN');
+  expect(builtPanel.itemSpacing).toBe(28);
+  expect(builtPanel.children.map((child) => child.name)).toEqual(['ul.slick-dots', 'div.slick-list']);
+  expect(builtPanel.children[0].y).toBe(28);
+  expect(builtPanel.children[1].y).toBe(72);
+});
+
 test('marks flex children that fill the parent counter axis as fill sizing', () => {
   const cardHeader = frameNode({
     tag: 'div',

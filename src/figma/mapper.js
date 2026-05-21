@@ -325,7 +325,7 @@ function buildNode(node, parentContext, ctx, path) {
     }))
     .filter(Boolean);
 
-  const orderedChildren = getOrderedChildren(children);
+  const orderedChildren = getOrderedFlowChildren(children, node);
   const builtChildPairs = orderedChildren
     .map((child, index) => ({
       source: child,
@@ -946,7 +946,10 @@ function isTableCellNode(node) {
   }
 
   const identity = `${node?.id || ''} ${(node?.classList || []).join(' ')}`.toLowerCase();
-  return /(?:^|[\s_-])(?:cell|table-cell|td|th)(?:$|[\s_-])/.test(identity);
+  // Match only when 'cell', 'td', or 'th' is a standalone word (surrounded by spaces)
+  // or when 'table-cell' appears as an exact phrase.
+  // Avoid false positives like 'excel' or 'cancel'.
+  return /(?:^|\s)(?:cell|td|th)(?:$|\s)|table-cell/.test(identity);
 }
 
 function isTableRowNode(node) {
@@ -960,7 +963,9 @@ function isTableRowNode(node) {
   }
 
   const identity = `${node?.id || ''} ${(node?.classList || []).join(' ')}`.toLowerCase();
-  return /(?:^|[\s_-])(?:row|table-row|data-row)(?:$|[\s_-])/.test(identity);
+  // Match only when 'row' is a standalone class (surrounded by spaces, not a suffix like 'flex-row').
+  // Tailwind classes like 'flex-row' must NOT match — they are layout helpers, not table rows.
+  return /(?:^|\s)row(?:$|\s)|table-row|data-row/.test(identity);
 }
 
 function isLikelyRowCellNode(node, parentNode) {
@@ -1000,24 +1005,29 @@ function getTableCellTextTruncationContext(node, parentContext, rect) {
 }
 
 function getInheritedTextTruncationContext(parentContext) {
+  // Only propagate a truncation context that was explicitly established by a
+  // table-cell (or equivalent) ancestor.  We intentionally do NOT synthesise a
+  // new context here from shouldTruncateText because that would truncate every
+  // fixed-width element whose text happens to carry text-overflow:ellipsis,
+  // which is not the intended behaviour — truncation should be table-only.
   if (parentContext?.textTruncationContext) {
     return parentContext.textTruncationContext;
-  }
-
-  if (parentContext?.sourceNode && shouldTruncateText(parentContext.sourceNode.computed, null)) {
-    return createTextTruncationContext(parentContext.resolvedRect, parentContext.sourceNode.computed);
   }
 
   return null;
 }
 
 function getChildTextTruncationContext(node, resolvedRect, inheritedContext) {
-  if (node && shouldTruncateText(node.computed, null)) {
+  // Only create a new truncation context when the node itself is a table cell
+  // (or a div-based row cell).  For all other nodes we just pass through any
+  // context that was already established by a table ancestor.
+  if (node && isTableCellNode(node) && shouldTruncateText(node.computed, null)) {
     return createTextTruncationContext(resolvedRect, node.computed);
   }
 
   return inheritedContext;
 }
+
 
 function createTextTruncationContext(rect, computed = {}) {
   if (!rect) {
@@ -1081,6 +1091,48 @@ function getOrderedChildren(children) {
       return a.index - b.index;
     })
     .map((item) => item.child);
+}
+
+function getOrderedFlowChildren(children, parentNode) {
+  const ordered = getOrderedChildren(children);
+  if (!isReverseFlexDirection(parentNode?.computed?.flexDirection)) {
+    return ordered;
+  }
+
+  const zValues = ordered
+    .map((child) => getLayerZ(child))
+    .filter((value) => Number.isFinite(value));
+  const hasMeaningfulLayering = new Set(zValues).size > 1;
+  if (hasMeaningfulLayering) {
+    return ordered;
+  }
+
+  return [...ordered].reverse();
+}
+
+function normalizeReverseFlexLayout(computed, layout) {
+  if (!layout || !isReverseFlexDirection(computed?.flexDirection)) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    primaryAxisAlignItems: reversePrimaryAxisAlign(layout.primaryAxisAlignItems),
+  };
+}
+
+function isReverseFlexDirection(flexDirection) {
+  return flexDirection === 'row-reverse' || flexDirection === 'column-reverse';
+}
+
+function reversePrimaryAxisAlign(value) {
+  if (value === 'MIN') {
+    return 'MAX';
+  }
+  if (value === 'MAX') {
+    return 'MIN';
+  }
+  return value;
 }
 
 function getLayerZ(node) {
@@ -1306,7 +1358,7 @@ function getRenderableFlexLayout(node) {
   }
 
   const children = getPresentChildren(node);
-  const layout = mapFlexLayout(node.computed);
+  const layout = normalizeReverseFlexLayout(node.computed, mapFlexLayout(node.computed));
   if (children.length === 0) {
     return { layout: withFlexSizing(node, [], layout) };
   }

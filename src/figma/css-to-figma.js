@@ -961,9 +961,11 @@ export function mapTypography(computed, fontMap = {}, parentComputed = null) {
     ...(effects.length ? { effects } : {}),
   };
 
-  if (shouldTruncateText(computed, parentComputed)) {
-    result.textTruncation = 'ENDING';
-  }
+  // NOTE: textTruncation is intentionally NOT set here.
+  // It is applied exclusively by mapper.js when a node is inside a table-cell
+  // context (td, th, display:table-cell, or div-based row cells).
+  // Setting it here would truncate headings, paragraphs, and any fixed-width
+  // text that happens to carry text-overflow:ellipsis in CSS.
 
   return result;
 }

@@ -119,6 +119,113 @@ test('still reveals safe entry-animation content', async () => {
   expect(headline.computed.transform).toBe('none');
 }, 30000);
 
+test('waits for delayed client layout before extracting slider-like content', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; }
+      .viewport { width: 320px; height: 120px; overflow: hidden; }
+      .slide { width: 320px; height: 120px; }
+      .active { background: #111111; }
+      .next { background: #333333; }
+    </style>
+    <div class="viewport">
+      <div class="track">
+        <section class="slide active">Current event</section>
+        <section class="slide next">Next event</section>
+        <section class="slide later">Later event</section>
+      </div>
+    </div>
+    <script>
+      setTimeout(() => {
+        document.querySelectorAll('.slide:not(.active)').forEach((el) => el.remove());
+        document.querySelector('.track').setAttribute('data-ready', 'true');
+      }, 800);
+    </script>
+  `, {
+    width: 360,
+    height: 180,
+  });
+
+  const active = find(domTree, (node) => node.classList?.includes('active'));
+  const next = find(domTree, (node) => node.classList?.includes('next'));
+  const later = find(domTree, (node) => node.classList?.includes('later'));
+
+  expect(active).toBeTruthy();
+  expect(next).toBeNull();
+  expect(later).toBeNull();
+}, 30000);
+
+test('skips aria-hidden inactive slider items without class-specific rules', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; }
+      .stage { width: 320px; height: 120px; overflow: hidden; }
+      .track { display: flex; width: 960px; }
+      .slide { flex: 0 0 320px; height: 120px; }
+      .active { background: #111111; }
+      .inactive { background: #333333; }
+    </style>
+    <div class="stage">
+      <div class="track">
+        <section class="slide inactive" aria-hidden="true" tabindex="-1" role="tabpanel">Hidden event</section>
+        <section class="slide active" aria-hidden="false" tabindex="0" role="tabpanel">Active event</section>
+        <img class="slide hidden-image" aria-hidden="true" tabindex="-1" alt="Hidden image" src="data:image/png;base64,aGVsbG8=" />
+      </div>
+    </div>
+  `, {
+    width: 360,
+    height: 180,
+  });
+
+  const active = find(domTree, (node) => node.classList?.includes('active'));
+  const inactive = find(domTree, (node) => node.classList?.includes('inactive'));
+  const hiddenImage = find(domTree, (node) => node.classList?.includes('hidden-image'));
+
+  expect(active).toBeTruthy();
+  expect(inactive).toBeNull();
+  expect(hiddenImage).toBeNull();
+}, 30000);
+
+test('collapses uninitialized single-view carousel stacks before extraction', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; }
+      .program-carousel { display: grid; grid-template-columns: 320px 240px; width: 560px; }
+      .media-slider { overflow: hidden; }
+      .media-slider img { display: block; width: 320px; height: 160px; }
+      .content-slider { overflow: hidden; }
+      .event-card { width: 240px; height: 160px; background: #3a0024; color: #ffffff; }
+    </style>
+    <div class="program-carousel">
+      <div class="media-slider">
+        <img class="event-image first-image" alt="First event image" src="data:image/png;base64,aGVsbG8=" />
+        <img class="event-image second-image" alt="Second event image" src="data:image/png;base64,aGVsbG8=" />
+        <img class="event-image third-image" alt="Third event image" src="data:image/png;base64,aGVsbG8=" />
+      </div>
+      <div class="content-slider">
+        <article class="event-card first-card">First event</article>
+        <article class="event-card second-card">Second event</article>
+        <article class="event-card third-card">Third event</article>
+      </div>
+      <button aria-label="Previous slide">Prev</button>
+      <button aria-label="Next slide">Next</button>
+    </div>
+  `, {
+    width: 620,
+    height: 260,
+  });
+
+  const firstImage = find(domTree, (node) => node.classList?.includes('first-image'));
+  const secondImage = find(domTree, (node) => node.classList?.includes('second-image'));
+  const firstCard = find(domTree, (node) => node.classList?.includes('first-card'));
+  const secondCard = find(domTree, (node) => node.classList?.includes('second-card'));
+
+  expect(firstImage).toBeTruthy();
+  expect(secondImage).toBeNull();
+  expect(firstCard).toBeTruthy();
+  expect(secondCard).toBeNull();
+}, 30000);
+
 test('does not reveal inactive disclosure dropdown panels', async () => {
   const { domTree } = await extractFromHtml(`
     <style>

@@ -74,6 +74,8 @@ async function stabilizePage(page) {
     }));
   });
 
+  await waitForLayoutStability(page);
+
   await page.evaluate(() => {
     document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
 
@@ -97,6 +99,7 @@ async function stabilizePage(page) {
       }
     });
 
+    limitCarouselFallbackStacks();
     limitPaginatedTableRows();
 
     function shouldForceAnimatedElementVisible(el, cs) {
@@ -175,6 +178,217 @@ async function stabilizePage(page) {
       }
 
       return /^translate(?:3d|x|y)?\(/i.test(text);
+    }
+
+    function limitCarouselFallbackStacks() {
+      const elements = Array.from(document.querySelectorAll('*'));
+      for (const el of elements) {
+        if (!isCarouselFallbackCandidate(el)) {
+          continue;
+        }
+
+        const slideChildren = getRenderableElementChildren(el);
+        if (slideChildren.length < 2) {
+          continue;
+        }
+
+        const active = pickActiveCarouselChild(slideChildren) || slideChildren[0];
+        let hiddenCount = 0;
+        for (const child of slideChildren) {
+          if (child === active) {
+            child.style.removeProperty('display');
+            continue;
+          }
+          child.setAttribute('data-morphus-carousel-clipped', '1');
+          child.style.setProperty('display', 'none', 'important');
+          hiddenCount++;
+        }
+
+        if (hiddenCount > 0) {
+          el.setAttribute('data-morphus-carousel-preview', '1');
+        }
+      }
+    }
+
+    function isCarouselFallbackCandidate(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) {
+        return false;
+      }
+
+      const tagName = el.tagName.toLowerCase();
+      if (/^(body|html|main|section|article|ul|ol|table|tbody|thead|tr|select|form)$/i.test(tagName)) {
+        return false;
+      }
+
+      const children = getRenderableElementChildren(el);
+      if (children.length < 2 || children.length > 24) {
+        return false;
+      }
+
+      if (!hasCarouselSignal(el)) {
+        return false;
+      }
+
+      return childrenLookLikeSingleViewportSlides(el, children);
+    }
+
+    function getRenderableElementChildren(el) {
+      return Array.from(el.children || []).filter((child) => {
+        if (!child || child.nodeType !== Node.ELEMENT_NODE) {
+          return false;
+        }
+        if (child.hasAttribute('data-morphus-carousel-clipped')) {
+          return false;
+        }
+        const cs = window.getComputedStyle(child);
+        const rect = child.getBoundingClientRect();
+        return cs.display !== 'none'
+          && cs.visibility !== 'hidden'
+          && rect.width > 0
+          && rect.height > 0;
+      });
+    }
+
+    function hasCarouselSignal(el) {
+      if (matchesCarouselIdentity(el)) {
+        return true;
+      }
+
+      let current = el.parentElement;
+      for (let depth = 0; current && depth < 3; depth++) {
+        if (matchesCarouselIdentity(current) || hasCarouselControls(current)) {
+          return true;
+        }
+        current = current.parentElement;
+      }
+
+      return hasCarouselControls(el.parentElement) || hasActiveAriaChild(el);
+    }
+
+    function matchesCarouselIdentity(el) {
+      const identity = [
+        el.id,
+        String(el.className || ''),
+        el.getAttribute('role'),
+        el.getAttribute('aria-label'),
+        el.getAttribute('data-carousel'),
+        el.getAttribute('data-slider'),
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      return /\b(carousel|slider|slideshow|slides?|slide-track|swiper|splide|glide|slick|flickity|embla|keen-slider|owl-carousel)\b/.test(identity);
+    }
+
+    function hasCarouselControls(root) {
+      if (!root || root.nodeType !== Node.ELEMENT_NODE) {
+        return false;
+      }
+
+      const controls = Array.from(root.querySelectorAll('button, a, [role="button"], [role="tab"], [aria-controls]'));
+      let directionalCount = 0;
+      let indicatorCount = 0;
+
+      for (const control of controls) {
+        const text = `${control.getAttribute('aria-label') || ''} ${control.getAttribute('title') || ''} ${control.innerText || control.textContent || ''}`.toLowerCase();
+        if (/\b(prev|previous|next|back|forward|sebelumnya|selanjutnya)\b/.test(text)) {
+          directionalCount++;
+        }
+        if (control.getAttribute('role') === 'tab' || /\b\d+\s+of\s+\d+\b/.test(text)) {
+          indicatorCount++;
+        }
+      }
+
+      return directionalCount >= 1 || indicatorCount >= 2 || Boolean(root.querySelector('[role="tablist"]'));
+    }
+
+    function hasActiveAriaChild(el) {
+      const children = Array.from(el.children || []);
+      return children.some((child) => child.getAttribute('aria-hidden') === 'false')
+        && children.some((child) => child.getAttribute('aria-hidden') === 'true');
+    }
+
+    function childrenLookLikeSingleViewportSlides(el, children) {
+      const parentRect = el.getBoundingClientRect();
+      const childRects = children.map((child) => child.getBoundingClientRect());
+      const visibleRects = childRects.filter((rect) => rect.width > 0 && rect.height > 0);
+      if (visibleRects.length < 2) {
+        return false;
+      }
+
+      const areas = visibleRects.map((rect) => rect.width * rect.height).filter((area) => area > 0);
+      const minArea = Math.min(...areas);
+      const maxArea = Math.max(...areas);
+      if (minArea <= 0 || maxArea / minArea > 1.35) {
+        return false;
+      }
+
+      const first = visibleRects[0];
+      const sameSized = visibleRects.every((rect) => {
+        return ratiosClose(rect.width, first.width, 0.18)
+          && ratiosClose(rect.height, first.height, 0.18);
+      });
+      if (!sameSized) {
+        return false;
+      }
+
+      const fillsParentWidth = parentRect.width > 0 && first.width >= parentRect.width * 0.55;
+      const fillsParentHeight = parentRect.height > 0 && first.height >= Math.min(parentRect.height, first.height) * 0.55;
+      const stackedLinearly = areRectsLinearlyStacked(visibleRects);
+      const overlapping = visibleRects.some((rect, index) => index > 0 && rectsOverlapSignificantly(first, rect));
+
+      return (fillsParentWidth || fillsParentHeight) && (stackedLinearly || overlapping);
+    }
+
+    function ratiosClose(value, reference, tolerance) {
+      if (!Number.isFinite(value) || !Number.isFinite(reference) || reference <= 0) {
+        return false;
+      }
+      return Math.abs(value - reference) / reference <= tolerance;
+    }
+
+    function areRectsLinearlyStacked(rects) {
+      if (rects.length < 2) {
+        return false;
+      }
+
+      const first = rects[0];
+      const byX = [...rects].sort((a, b) => a.x - b.x);
+      const byY = [...rects].sort((a, b) => a.y - b.y);
+      const horizontalBase = byX[0];
+      const verticalBase = byY[0];
+      const horizontal = byX.every((rect, index) => {
+        if (index === 0) {
+          return true;
+        }
+        return Math.abs(rect.y - horizontalBase.y) <= Math.max(2, horizontalBase.height * 0.05)
+          && rect.x >= byX[index - 1].x + byX[index - 1].width - 4;
+      });
+      const vertical = byY.every((rect, index) => {
+        if (index === 0) {
+          return true;
+        }
+        return Math.abs(rect.x - verticalBase.x) <= Math.max(2, verticalBase.width * 0.05)
+          && rect.y >= byY[index - 1].y + byY[index - 1].height - 4;
+      });
+
+      return horizontal || vertical;
+    }
+
+    function rectsOverlapSignificantly(a, b) {
+      const intersectionWidth = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+      const intersectionHeight = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+      const intersection = Math.max(intersectionWidth, 0) * Math.max(intersectionHeight, 0);
+      const smallerArea = Math.min(a.width * a.height, b.width * b.height);
+      return smallerArea > 0 && intersection / smallerArea >= 0.6;
+    }
+
+    function pickActiveCarouselChild(children) {
+      return children.find((child) => child.getAttribute('aria-hidden') === 'false')
+        || children.find((child) => child.getAttribute('aria-selected') === 'true')
+        || children.find((child) => {
+          const classes = String(child.className || '').toLowerCase();
+          return /\b(active|current|selected)\b/.test(classes);
+        })
+        || null;
     }
 
     function limitPaginatedTableRows() {
@@ -284,6 +498,82 @@ async function stabilizePage(page) {
   });
 
   await waitForCanvasPaint(page);
+}
+
+async function waitForLayoutStability(page) {
+  try {
+    await page.waitForFunction(() => {
+      const now = performance.now();
+      const state = window.__morphusLayoutCaptureState || {
+        startedAt: now,
+        lastChangedAt: now,
+        lastSignature: '',
+        stableCount: 0,
+      };
+
+      const signature = buildLayoutSignature();
+      if (signature === state.lastSignature) {
+        state.stableCount += 1;
+      } else {
+        state.lastSignature = signature;
+        state.lastChangedAt = now;
+        state.stableCount = 0;
+      }
+
+      window.__morphusLayoutCaptureState = state;
+      return state.stableCount >= 4
+        && now - state.startedAt >= 800
+        && now - state.lastChangedAt >= 300;
+
+      function buildLayoutSignature() {
+        const doc = document.documentElement;
+        const body = document.body;
+        const elements = Array.from(document.querySelectorAll('*'));
+        const limit = Math.min(elements.length, 2000);
+        let hash = 2166136261;
+
+        for (let index = 0; index < limit; index++) {
+          const el = elements[index];
+          const rect = el.getBoundingClientRect();
+          const cs = window.getComputedStyle(el);
+          hash = hashString(hash, el.tagName);
+          hash = hashString(hash, el.className || '');
+          hash = hashString(hash, cs.display);
+          hash = hashString(hash, cs.visibility);
+          hash = hashString(hash, cs.opacity);
+          hash = hashString(hash, cs.transform);
+          hash = hashNumber(hash, rect.x);
+          hash = hashNumber(hash, rect.y);
+          hash = hashNumber(hash, rect.width);
+          hash = hashNumber(hash, rect.height);
+        }
+
+        return [
+          document.readyState,
+          elements.length,
+          doc ? doc.scrollWidth : 0,
+          doc ? doc.scrollHeight : 0,
+          body ? Math.round(body.getBoundingClientRect().height * 10) : 0,
+          hash >>> 0,
+        ].join('|');
+      }
+
+      function hashNumber(hash, value) {
+        return hashString(hash, String(Math.round((Number(value) || 0) * 10)));
+      }
+
+      function hashString(hash, value) {
+        const text = String(value || '');
+        for (let index = 0; index < text.length; index++) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+      }
+    }, null, { timeout: 3500, polling: 100 });
+  } catch (err) {
+    // Dynamic pages sometimes keep changing; continue with the best stable state reached.
+  }
 }
 
 async function createPage(browser, viewport) {
@@ -569,7 +859,7 @@ function walkDOMInBrowser() {
 
     // Skip invisible/zero-size elements
     if (rect.width === 0 && rect.height === 0 && cs.position === 'static') return null;
-    if (isVisuallyHiddenElement(cs)) return null;
+    if (isVisuallyHiddenElement(el, cs)) return null;
 
     const rawText = normalizeTextContent(el.innerText || el.textContent || '');
     const hasVisualBox =
@@ -1259,7 +1549,7 @@ function walkDOMInBrowser() {
     };
   }
 
-  function isVisuallyHiddenElement(cs) {
+  function isVisuallyHiddenElement(el, cs) {
     if (!cs) {
       return true;
     }
@@ -1267,7 +1557,36 @@ function walkDOMInBrowser() {
     const opacity = parseFloat(cs.opacity);
     return cs.display === 'none'
       || cs.visibility === 'hidden'
-      || (Number.isFinite(opacity) && opacity <= 0);
+      || (Number.isFinite(opacity) && opacity <= 0)
+      || isAriaHiddenRenderState(el);
+  }
+
+  function isAriaHiddenRenderState(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE || el.getAttribute('aria-hidden') !== 'true') {
+      return false;
+    }
+
+    if (el.getAttribute('tabindex') === '-1') {
+      return true;
+    }
+
+    const role = String(el.getAttribute('role') || '').toLowerCase();
+    if (role === 'tabpanel') {
+      return true;
+    }
+
+    return hasVisibleAriaSibling(el);
+  }
+
+  function hasVisibleAriaSibling(el) {
+    const parent = el.parentElement;
+    if (!parent) {
+      return false;
+    }
+
+    return Array.from(parent.children).some((sibling) => {
+      return sibling !== el && sibling.getAttribute('aria-hidden') === 'false';
+    });
   }
 
   function extractImageData(el) {
