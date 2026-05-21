@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: 'Publish GitHub Release for Homebrew latest/download URLs'
+        description: 'Publish GitHub Release with versioned Morphus assets'
         required: false
         type: boolean
         default: false
@@ -140,27 +140,27 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets out/homebrew/Casks
           find downloaded-artifacts -name '*.zip' -exec cp {} release-assets/ \;
-          for file in release-assets/*.zip; do
-            clean_name="$(basename "$file" | tr ' ' '.')"
-            if [[ "$(basename "$file")" != "$clean_name" ]]; then
-              mv "$file" "release-assets/$clean_name"
-            fi
-          done
           version="${{ steps.release_meta.outputs.version }}"
           tag="${{ steps.release_meta.outputs.tag }}"
-          mkdir -p figma-plugin-package/"Morphus Figma Plugin"
-          cp figma-plugin/manifest.json figma-plugin/code.js figma-plugin/ui.html figma-plugin-package/"Morphus Figma Plugin"/
-          (cd figma-plugin-package && zip -r ../release-assets/Morphus.Figma.Plugin.zip "Morphus Figma Plugin")
-          arm_zip="$(find release-assets -name 'Morphus.Converter.macOS.arm64.zip' | head -n 1)"
-          intel_zip="$(find release-assets -name 'Morphus.Converter.macOS.x64.zip' | head -n 1)"
+          for file in release-assets/*.zip; do
+            base_name="$(basename "$file" .zip)"
+            clean_base="$(echo "$base_name" | tr ' ' '.')"
+            versioned_name="${clean_base}.v${version}.zip"
+            mv "$file" "release-assets/$versioned_name"
+          done
+          mkdir -p figma-plugin-package
+          cp figma-plugin/manifest.json figma-plugin/code.js figma-plugin/ui.html figma-plugin-package/
+          (cd figma-plugin-package && zip -r ../release-assets/Morphus.Figma.Plugin.v${version}.zip .)
+          arm_zip="$(find release-assets -name 'Morphus.Converter.macOS.arm64.v*.zip' | head -n 1)"
+          intel_zip="$(find release-assets -name 'Morphus.Converter.macOS.x64.v*.zip' | head -n 1)"
           node scripts/generate-homebrew-cask.js \
             --version "$version" \
             --repo "$GITHUB_REPOSITORY" \
             --tag "$tag" \
             --arm-zip "$arm_zip" \
             --intel-zip "$intel_zip" \
-            --release-name-style dotted \
-            --output release-assets/morphus-converter.rb
+            --release-name-style dotted-versioned \
+            --output release-assets/morphus-converter.v${version}.rb
           ls -lh release-assets
 
       - name: Create GitHub release

@@ -51,7 +51,7 @@ function renderUniversalCask({ version, repo, tag, shas }) {
   desc "Local converter companion for the Morphus Figma plugin"
   homepage "https://github.com/${repo}"
 
-  app "Morphus Converter macOS #{arch}/Morphus Converter.app"
+  app "Morphus Converter.app"
 
   uninstall quit: "com.morphus.converter"
 end
@@ -71,7 +71,7 @@ function renderArmOnlyCask({ version, repo, tag, shas }) {
 
   depends_on arch: :arm64
 
-  app "Morphus Converter macOS arm64/Morphus Converter.app"
+  app "Morphus Converter.app"
 
   uninstall quit: "com.morphus.converter"
 end
@@ -86,12 +86,18 @@ function releaseZipNameTemplate() {
   if (releaseNameStyle === 'original') {
     return 'Morphus%20Converter%20macOS%20#{arch}.zip';
   }
+  if (releaseNameStyle === 'dotted-versioned') {
+    return `Morphus.Converter.macOS.#{arch}.v${version}.zip`;
+  }
   return 'Morphus.Converter.macOS.#{arch}.zip';
 }
 
 function releaseZipName(arch, fallbackPath) {
   if (releaseNameStyle === 'original') {
     return basename(fallbackPath).replace(/ /g, '%20');
+  }
+  if (releaseNameStyle === 'dotted-versioned') {
+    return `Morphus.Converter.macOS.${arch}.v${version}.zip`;
   }
   return `Morphus.Converter.macOS.${arch}.zip`;
 }

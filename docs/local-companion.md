@@ -15,14 +15,14 @@ Users do not need to install Node.js.
 
 Everyone needs the current Figma plugin package. This is separate from Morphus Converter.
 
-1. Download `Morphus.Figma.Plugin.zip` from the GitHub Release.
+1. Download `Morphus.Figma.Plugin.v<version>.zip` from the GitHub Release.
 2. Extract it.
 3. In Figma, go to `Plugins > Development > Import plugin from manifest...`.
-4. Choose `Morphus Figma Plugin/manifest.json`.
+4. Choose `manifest.json` from the extracted folder.
 
 The old `htmltofigma-v3.zip` plugin should be replaced because it may still point to the public server and may not include the Morphus Converter heartbeat.
 
-If Figma shows `Manifest error: Invalid value for networkAccess` or `Invalid value for allowedDomains`, the user is likely importing an older plugin package. Use a newer `Morphus.Figma.Plugin.zip` that uses `http://localhost:3210` and includes the required `networkAccess.reasoning` field for localhost access.
+If Figma shows `Manifest error: Invalid value for networkAccess` or `Invalid value for allowedDomains`, the user is likely importing an older plugin package. Use a newer `Morphus.Figma.Plugin.v<version>.zip` that uses `http://localhost:3210` and includes the required `networkAccess.reasoning` field for localhost access.
 
 ## User Flow: macOS
 
@@ -36,20 +36,20 @@ brew install --cask morphus-converter
 open -a "Morphus Converter"
 ```
 
-This installs the latest macOS release asset from GitHub Releases. For an update:
+This installs the macOS release asset referenced by `Casks/morphus-converter.rb`. For an update:
 
 ```bash
 brew update
 brew reinstall --cask morphus-converter
 ```
 
-The cask in this repo uses `version :latest` so teammates do not need a cask update for every internal build. For a stricter versioned cask with SHA checksums, use the generated `morphus-converter.rb` attached to tag releases.
+The cask in this repo points at the current internal release version. Update the cask version before publishing a new Homebrew release. For a stricter cask with SHA checksums, use the generated `morphus-converter.v<version>.rb` attached to tag releases.
 
-The release workflow publishes macOS assets with dot-separated filenames such as `Morphus.Converter.macOS.arm64.zip`. Keep the committed cask URL in sync with that naming so Homebrew does not hit a 404.
+The release workflow publishes macOS assets with versioned dot-separated filenames such as `Morphus.Converter.macOS.arm64.v0.1.4.zip`. Keep the committed cask URL in sync with that naming so Homebrew does not hit a 404.
 
 ### Zip
 
-1. Extract `Morphus.Converter.macOS.<arch>.zip`.
+1. Extract `Morphus.Converter.macOS.<arch>.v<version>.zip`.
 2. Move `Morphus Converter.app` to `Applications`, or keep it in the extracted folder.
 3. Open `Morphus Converter.app`.
 4. If macOS blocks it, right-click the app and choose `Open`.
@@ -63,7 +63,7 @@ For smoother company-wide distribution, sign and notarize the `.app` with an App
 
 ## User Flow: Windows
 
-1. Extract `Morphus.Converter.Windows.<arch>.zip`.
+1. Extract `Morphus.Converter.Windows.<arch>.v<version>.zip`.
 2. Open `Morphus Converter.vbs`. If Windows hides file extensions, this may appear as `Morphus Converter`.
 3. A browser status page opens at `http://localhost:3210`.
 4. The converter runs in the background without a Command Prompt window.
@@ -103,6 +103,8 @@ Manual release flow:
 
 Important: Homebrew uses GitHub Release download URLs. A manual workflow run that only produces artifacts is useful for testing, but Homebrew install works after a release is published.
 
+Release zips are intentionally flat. After users choose Extract All, the extracted Figma plugin folder contains `manifest.json` directly, and the extracted Windows converter folder contains `Morphus Converter.vbs` directly.
+
 Tag release flow:
 
 ```bash
@@ -112,13 +114,13 @@ git push origin morphus-v0.1.1
 
 That tag automatically starts the same workflow and publishes a GitHub Release with:
 
-- `Morphus.Figma.Plugin.zip` for Figma manifest import.
-- macOS Apple Silicon converter zip.
-- macOS Intel converter zip.
-- Windows x64 converter zip, when the Windows build succeeds.
-- Versioned `morphus-converter.rb` Homebrew Cask with SHA checksums.
+- `Morphus.Figma.Plugin.v<version>.zip` for Figma manifest import.
+- `Morphus.Converter.macOS.arm64.v<version>.zip`.
+- `Morphus.Converter.macOS.x64.v<version>.zip`.
+- `Morphus.Converter.Windows.x64.v<version>.zip`, when the Windows build succeeds.
+- Versioned `morphus-converter.v<version>.rb` Homebrew Cask with SHA checksums.
 
-The committed cask at `Casks/morphus-converter.rb` points at the latest release. If you prefer a dedicated Homebrew tap repo later, copy the generated `morphus-converter.rb` into a separate `send0moka/homebrew-morphus` repo under `Casks/morphus-converter.rb`, then users can run:
+The committed cask at `Casks/morphus-converter.rb` points at the current release. If you prefer a dedicated Homebrew tap repo later, copy the generated `morphus-converter.v<version>.rb` into a separate `send0moka/homebrew-morphus` repo under `Casks/morphus-converter.rb`, then users can run:
 
 ```bash
 brew tap send0moka/morphus

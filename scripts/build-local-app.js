@@ -99,14 +99,13 @@ function createLayout(stageDir, currentTarget) {
     };
   }
 
-  const packageRoot = join(stageDir, 'Morphus Converter');
   return {
     target: currentTarget,
-    packageRoot,
-    appDir: join(packageRoot, 'app'),
-    runtimeDir: join(packageRoot, '.runtime', 'node'),
-    launcherPath: join(packageRoot, 'Morphus Converter.vbs'),
-    debugLauncherPath: join(packageRoot, 'Morphus Converter Debug.cmd'),
+    packageRoot: stageDir,
+    appDir: join(stageDir, 'app'),
+    runtimeDir: join(stageDir, '.runtime', 'node'),
+    launcherPath: join(stageDir, 'Morphus Converter.vbs'),
+    debugLauncherPath: join(stageDir, 'Morphus Converter Debug.cmd'),
   };
 }
 
@@ -322,18 +321,14 @@ function createArchive(releaseDir, name, currentTarget) {
   rmSync(zipPath, { force: true });
 
   if (currentTarget === 'macos') {
-    run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', releaseDir, zipPath], {
+    run('ditto', ['-c', '-k', '--sequesterRsrc', releaseDir, zipPath], {
       cwd: dirname(releaseDir),
     });
     console.log(`Created ${zipPath}`);
     return;
   }
 
-  run('powershell', [
-    '-NoProfile',
-    '-Command',
-    `Compress-Archive -Path ${quotePowerShell(releaseDir)} -DestinationPath ${quotePowerShell(zipPath)} -Force`,
-  ]);
+  run('tar', ['-a', '-cf', zipPath, '-C', releaseDir, '.']);
   console.log(`Created ${zipPath}`);
 }
 
