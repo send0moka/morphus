@@ -87,7 +87,7 @@ jobs:
         if: success()
         with:
           name: morphus-converter-windows-x64
-          path: out/local-app/*.zip
+          path: out/local-app/*.exe
           if-no-files-found: error
 
   release:
@@ -139,11 +139,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets out/homebrew/Casks
-          find downloaded-artifacts \( -name '*.zip' -o -name '*.dmg' \) -exec cp {} release-assets/ \;
+          find downloaded-artifacts \( -name '*.zip' -o -name '*.dmg' -o -name '*.exe' \) -exec cp {} release-assets/ \;
           version="${{ steps.release_meta.outputs.version }}"
           tag="${{ steps.release_meta.outputs.tag }}"
           shopt -s nullglob
-          for file in release-assets/*.{zip,dmg}; do
+          for file in release-assets/*.{zip,dmg,exe}; do
             ext="${file##*.}"
             base_name="$(basename "$file" ".$ext")"
             clean_base="$(echo "$base_name" | tr ' ' '.')"

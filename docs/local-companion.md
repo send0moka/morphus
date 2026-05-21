@@ -62,15 +62,15 @@ For smoother company-wide distribution, sign and notarize the `.app` with an App
 
 ## User Flow: Windows
 
-1. Extract `Morphus.Converter.Windows.<arch>.v<version>.zip`.
-2. Open `Morphus Converter.vbs`. If Windows hides file extensions, this may appear as `Morphus Converter`.
+1. Open `Morphus.Converter.Windows.<arch>.v<version>.exe`.
+2. On first launch, the EXE installs the converter files under `%LOCALAPPDATA%\Morphus Converter`.
 3. A browser status page opens at `http://localhost:3210`.
 4. The converter runs in the background without a Command Prompt window.
 5. Open the Morphus Figma plugin and convert as usual.
 6. Close the Figma plugin when finished. Morphus Converter stays idle in the background.
 7. To pause conversion, open `http://localhost:3210` and click `Shut Down Converter`.
 8. To enable conversion again, click `Run Converter` on the same status page.
-9. If the background launcher is blocked by Windows policy, open `Morphus Converter Debug.cmd` to run it with visible logs.
+9. If Windows SmartScreen appears, choose `More info` and `Run anyway`, or use a signed build for company-wide rollout.
 
 Windows users do not need Node.js either; `node.exe` is bundled inside `.runtime/node`.
 
@@ -122,11 +122,11 @@ Manual release flow:
 4. Click `Run workflow`.
 5. To make Homebrew work immediately, enable `publish_release` and fill `release_version`, for example `0.1.0`.
 6. Download the artifact packages after the jobs finish, or use the published GitHub Release assets.
-7. Share the macOS DMG with teammates and the Windows zip with Windows users.
+7. Share the macOS DMG with teammates and the Windows EXE with Windows users.
 
 Important: Homebrew uses GitHub Release download URLs. A manual workflow run that only produces artifacts is useful for testing, but Homebrew install works after a release is published.
 
-Release packages are intentionally simple. The macOS DMG contains `Morphus Converter.app`, the extracted Figma plugin folder contains `manifest.json` directly, and the extracted Windows converter folder contains `Morphus Converter.vbs` directly.
+Release packages are intentionally simple. The macOS DMG contains `Morphus Converter.app`, the extracted Figma plugin folder contains `manifest.json` directly, and the Windows EXE self-extracts the converter files on first launch.
 
 Tag release flow:
 
@@ -140,7 +140,7 @@ That tag automatically starts the same workflow and publishes a GitHub Release w
 - `Morphus.Figma.Plugin.v<version>.zip` for Figma manifest import.
 - `Morphus.Converter.macOS.arm64.v<version>.dmg`.
 - `Morphus.Converter.macOS.x64.v<version>.dmg`.
-- `Morphus.Converter.Windows.x64.v<version>.zip`, when the Windows build succeeds.
+- `Morphus.Converter.Windows.x64.v<version>.exe`, when the Windows build succeeds.
 - Versioned `morphus-converter.v<version>.rb` Homebrew Cask with SHA checksums.
 
 The committed cask at `Casks/morphus-converter.rb` points at the current release. If you prefer a dedicated Homebrew tap repo later, copy the generated `morphus-converter.v<version>.rb` into a separate `send0moka/homebrew-morphus` repo under `Casks/morphus-converter.rb`, then users can run:
@@ -175,10 +175,10 @@ npm run converter:build
 Output:
 
 ```text
-out/local-app/Morphus Converter Windows x64.zip
+out/local-app/Morphus Converter Windows x64.exe
 ```
 
-The default build creates a slim package: Morphus code is bundled with esbuild, the Node runtime is copied without npm/corepack, and Chromium is not bundled. On Windows this uses the built-in Microsoft Edge browser; on macOS this uses an installed Google Chrome browser.
+The default build creates a slim package: Morphus code is bundled with esbuild, the Node runtime is copied without npm/corepack, and Chromium is not bundled. On Windows this uses the built-in Microsoft Edge browser; on macOS this uses an installed Google Chrome browser. The Windows build also leaves `out/local-app/Morphus Converter Windows x64/` as an unpacked debug folder.
 
 To build the older fully offline package with Chromium included:
 
@@ -226,7 +226,7 @@ The portable launchers already set these values.
 ## Limits
 
 - A Figma plugin cannot start a local process by itself. Users still need to open the companion app or launcher once.
-- A downloaded package cannot safely auto-run code immediately after opening/extraction on macOS or Windows.
+- A downloaded package cannot safely auto-run code before the user opens the macOS app or Windows EXE.
 - macOS `.app` packages should be signed/notarized before broad internal rollout.
-- Windows Script Host may be disabled by company policy; use `Morphus Converter Debug.cmd` as the fallback launcher in that case.
+- The Windows EXE should be code-signed before broad internal rollout to reduce SmartScreen and company-policy friction.
 - Cross-building is not recommended because Node and Chromium binaries are platform-specific.

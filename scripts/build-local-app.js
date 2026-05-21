@@ -3,13 +3,16 @@
  * Builds a portable Morphus Converter package for the current OS.
  *
  * Run this on macOS to produce the .dmg package, and on Windows to produce
- * the portable Windows folder. Playwright browsers are platform-specific, so
+ * a self-extracting .exe package. Playwright browsers are platform-specific, so
  * this script intentionally packages only the OS it is running on.
  */
 
-import { createWriteStream } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
 import {
+  appendFileSync,
   chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -37,6 +40,7 @@ const PLAYWRIGHT_VERSION = normalizeVersion(
     || '1.60.0'
 );
 const INCLUDE_BROWSER = getBooleanEnv('MORPHUS_BUNDLE_BROWSER', false);
+const WINDOWS_SFX_MARKER = '\n--MORPHUS-CONVERTER-WINDOWS-SFX-PAYLOAD-v1-6F733B9D8A5B4E49--\n';
 
 const target = getCurrentTarget();
 const arch = normalizeArch(process.arch);
@@ -74,7 +78,7 @@ async function main() {
   writePackageReadme(layout.readmeDir || layout.packageRoot, target);
 
   renameStage(stageDir, releaseDir);
-  createPackage(releaseDir, name, target);
+  await createPackage(releaseDir, name, target);
 
   console.log(`Built ${releaseDir}`);
 }
@@ -108,7 +112,7 @@ function createLayout(stageDir, currentTarget) {
     packageRoot: stageDir,
     appDir: join(stageDir, 'app'),
     runtimeDir: join(stageDir, '.runtime', 'node'),
-    launcherPath: join(stageDir, 'Morphus Converter.vbs'),
+    launcherPath: join(stageDir, 'Morphus Converter.exe'),
     debugLauncherPath: join(stageDir, 'Morphus Converter Debug.cmd'),
   };
 }
@@ -232,8 +236,83 @@ function writeLauncher(layout) {
     return;
   }
 
-  writeFileSync(layout.launcherPath, getWindowsBackgroundLauncher(), 'utf8');
+  compileWindowsLauncher(layout);
   writeFileSync(layout.debugLauncherPath, getWindowsDebugLauncher(), 'utf8');
+}
+
+function compileWindowsLauncher(layout) {
+  const sourcePath = join(OUT_DIR, '.cache', 'windows-launcher.cs');
+  mkdirSync(dirname(sourcePath), { recursive: true });
+  rmSync(layout.launcherPath, { force: true });
+  writeFileSync(sourcePath, getWindowsLauncherSource(), 'utf8');
+  run('powershell', [
+    '-NoProfile',
+    '-Command',
+    [
+      `$source = Get-Content -LiteralPath ${quotePowerShell(sourcePath)} -Raw;`,
+      'Add-Type -TypeDefinition $source -ReferencedAssemblies System.Windows.Forms',
+      `-OutputAssembly ${quotePowerShell(layout.launcherPath)} -OutputType WindowsApplication;`,
+    ].join(' '),
+  ]);
+}
+
+function getWindowsLauncherSource() {
+  return `using System;
+using System.Diagnostics;
+using System.IO;
+using System.Windows.Forms;
+
+internal static class Program
+{
+  [STAThread]
+  private static int Main()
+  {
+    try
+    {
+      string root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+      SetEnv("HOST", "localhost");
+      SetEnv("MORPHUS_PORT", "3210");
+      SetEnv("MORPHUS_LOCAL_MODE", "1");
+      SetEnv("MORPHUS_OPEN_STATUS_PAGE", "1");
+      SetEnv("MORPHUS_IDLE_SHUTDOWN_MS", "0");
+      ${getWindowsBrowserEnv()}
+
+      string nodePath = Path.Combine(root, ".runtime", "node", "node.exe");
+      string scriptPath = Path.Combine(root, "app", "local-companion.cjs");
+      if (!File.Exists(nodePath) || !File.Exists(scriptPath))
+      {
+        MessageBox.Show("Morphus Converter files are incomplete. Please extract the package again.", "Morphus Converter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        return 1;
+      }
+
+      ProcessStartInfo startInfo = new ProcessStartInfo();
+      startInfo.FileName = nodePath;
+      startInfo.Arguments = QuoteArg(scriptPath);
+      startInfo.WorkingDirectory = Path.Combine(root, "app");
+      startInfo.UseShellExecute = false;
+      startInfo.CreateNoWindow = true;
+      startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+      Process.Start(startInfo);
+      return 0;
+    }
+    catch (Exception error)
+    {
+      MessageBox.Show(error.Message, "Morphus Converter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      return 1;
+    }
+  }
+
+  private static void SetEnv(string name, string value)
+  {
+    Environment.SetEnvironmentVariable(name, value, EnvironmentVariableTarget.Process);
+  }
+
+  private static string QuoteArg(string value)
+  {
+    return "\\\"" + value.Replace("\\\"", "\\\\\\\"") + "\\\"";
+  }
+}
+`;
 }
 
 function getMacInfoPlist() {
@@ -276,31 +355,6 @@ exec "$RESOURCES/node/bin/node" "$RESOURCES/app/local-companion.cjs"
 `;
 }
 
-function getWindowsBackgroundLauncher() {
-  return `Set shell = CreateObject("WScript.Shell")
-Set fso = CreateObject("Scripting.FileSystemObject")
-root = fso.GetParentFolderName(WScript.ScriptFullName)
-
-Set env = shell.Environment("PROCESS")
-env("HOST") = "localhost"
-env("MORPHUS_PORT") = "3210"
-env("MORPHUS_LOCAL_MODE") = "1"
-env("MORPHUS_OPEN_STATUS_PAGE") = "1"
-env("MORPHUS_IDLE_SHUTDOWN_MS") = "0"
-${getWindowsBrowserEnv()}
-
-nodePath = root & "\\.runtime\\node\\node.exe"
-scriptPath = root & "\\app\\local-companion.cjs"
-command = Quote(nodePath) & " " & Quote(scriptPath)
-
-shell.Run command, 0, False
-
-Function Quote(value)
-  Quote = Chr(34) & value & Chr(34)
-End Function
-`;
-}
-
 function getWindowsDebugLauncher() {
   return `@echo off
 setlocal
@@ -330,9 +384,9 @@ function getMacBrowserEnv() {
 
 function getWindowsBrowserEnv() {
   if (INCLUDE_BROWSER) {
-    return 'env("PLAYWRIGHT_BROWSERS_PATH") = root & "\\app\\browsers"';
+    return 'SetEnv("PLAYWRIGHT_BROWSERS_PATH", Path.Combine(root, "app", "browsers"));';
   }
-  return `env("MORPHUS_BROWSER_CHANNEL") = "${getDefaultBrowserChannel()}"`;
+  return `SetEnv("MORPHUS_BROWSER_CHANNEL", "${getDefaultBrowserChannel()}");`;
 }
 
 function getWindowsDebugBrowserEnv() {
@@ -365,7 +419,7 @@ ${runtimeText}
     : `Morphus Converter for Windows
 =============================
 
-1. Open "Morphus Converter.vbs". Windows may show this as "Morphus Converter" if file extensions are hidden.
+1. Open "Morphus Converter.exe". Windows may show this as "Morphus Converter" if file extensions are hidden.
 2. A browser status page opens at http://localhost:3210. The converter runs in the background without a Command Prompt window.
 3. Open the Morphus Figma plugin. The plugin will use http://localhost:3210 automatically.
 4. When the plugin is closed, Morphus Converter stays idle in the background.
@@ -395,7 +449,7 @@ function renameStage(stageDir, releaseDir) {
   renameSync(stageDir, releaseDir);
 }
 
-function createPackage(releaseDir, name, currentTarget) {
+async function createPackage(releaseDir, name, currentTarget) {
   if (currentTarget === 'macos') {
     const dmgPath = resolve(OUT_DIR, `${name}.dmg`);
     rmSync(dmgPath, { force: true });
@@ -411,17 +465,185 @@ function createPackage(releaseDir, name, currentTarget) {
     return;
   }
 
-  const zipPath = resolve(OUT_DIR, `${name}.zip`);
-  rmSync(zipPath, { force: true });
+  const oldZipPath = resolve(OUT_DIR, `${name}.zip`);
+  rmSync(oldZipPath, { force: true });
+
+  const payloadZipPath = join(OUT_DIR, '.cache', `${slug(name)}-payload.zip`);
+  const exePath = resolve(OUT_DIR, `${name}.exe`);
+  rmSync(payloadZipPath, { force: true });
+  rmSync(exePath, { force: true });
   run('powershell', [
     '-NoProfile',
     '-Command',
     [
       'Add-Type -AssemblyName System.IO.Compression.FileSystem;',
-      `[System.IO.Compression.ZipFile]::CreateFromDirectory(${quotePowerShell(releaseDir)}, ${quotePowerShell(zipPath)}, [System.IO.Compression.CompressionLevel]::Optimal, $false);`,
+      `[System.IO.Compression.ZipFile]::CreateFromDirectory(${quotePowerShell(releaseDir)}, ${quotePowerShell(payloadZipPath)}, [System.IO.Compression.CompressionLevel]::Optimal, $false);`,
     ].join(' '),
   ]);
-  console.log(`Created ${zipPath}`);
+  await createWindowsSelfExtractingPackage(payloadZipPath, exePath, name);
+  console.log(`Created ${exePath}`);
+}
+
+async function createWindowsSelfExtractingPackage(payloadZipPath, exePath, name) {
+  const payloadSha256 = await sha256File(payloadZipPath);
+  const sourcePath = join(OUT_DIR, '.cache', 'windows-self-extractor.cs');
+  const stubPath = join(OUT_DIR, '.cache', 'windows-self-extractor.exe');
+  const installSubdir = `${slug(name)}-v${slug(PACKAGE.version || '0.0.0')}-${payloadSha256.slice(0, 12)}`;
+
+  writeFileSync(sourcePath, getWindowsSelfExtractorSource({ payloadSha256, installSubdir }), 'utf8');
+  rmSync(stubPath, { force: true });
+  run('powershell', [
+    '-NoProfile',
+    '-Command',
+    [
+      `$source = Get-Content -LiteralPath ${quotePowerShell(sourcePath)} -Raw;`,
+      'Add-Type -TypeDefinition $source',
+      '-ReferencedAssemblies System.Windows.Forms,System.IO.Compression.FileSystem,System.IO.Compression',
+      `-OutputAssembly ${quotePowerShell(stubPath)} -OutputType WindowsApplication;`,
+    ].join(' '),
+  ]);
+
+  copyFileSync(stubPath, exePath);
+  appendFileSync(exePath, WINDOWS_SFX_MARKER, 'utf8');
+  await appendFileFromPath(exePath, payloadZipPath);
+}
+
+function getWindowsSelfExtractorSource({ payloadSha256, installSubdir }) {
+  return `using System;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Text;
+using System.Windows.Forms;
+
+internal static class Program
+{
+  private const string PayloadMarker = ${csharpString(WINDOWS_SFX_MARKER)};
+  private const string PayloadSha256 = ${csharpString(payloadSha256)};
+  private const string InstallSubdir = ${csharpString(installSubdir)};
+
+  [STAThread]
+  private static int Main()
+  {
+    try
+    {
+      string installDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Morphus Converter",
+        InstallSubdir
+      );
+      string launcherPath = Path.Combine(installDir, "Morphus Converter.exe");
+      string stampPath = Path.Combine(installDir, ".payload.sha256");
+
+      if (!IsInstalled(launcherPath, stampPath))
+      {
+        InstallPayload(installDir, stampPath);
+      }
+
+      ProcessStartInfo startInfo = new ProcessStartInfo();
+      startInfo.FileName = launcherPath;
+      startInfo.WorkingDirectory = installDir;
+      startInfo.UseShellExecute = false;
+      startInfo.CreateNoWindow = true;
+      startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+      Process.Start(startInfo);
+      return 0;
+    }
+    catch (Exception error)
+    {
+      MessageBox.Show(error.Message, "Morphus Converter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      return 1;
+    }
+  }
+
+  private static bool IsInstalled(string launcherPath, string stampPath)
+  {
+    if (!File.Exists(launcherPath) || !File.Exists(stampPath))
+    {
+      return false;
+    }
+
+    try
+    {
+      return File.ReadAllText(stampPath).Trim().Equals(PayloadSha256, StringComparison.OrdinalIgnoreCase);
+    }
+    catch
+    {
+      return false;
+    }
+  }
+
+  private static void InstallPayload(string installDir, string stampPath)
+  {
+    string tempDir = Path.Combine(Path.GetTempPath(), "MorphusConverter-" + PayloadSha256.Substring(0, 12));
+    string payloadZipPath = Path.Combine(tempDir, "payload.zip");
+
+    if (Directory.Exists(tempDir))
+    {
+      Directory.Delete(tempDir, true);
+    }
+    Directory.CreateDirectory(tempDir);
+
+    WritePayloadZip(Application.ExecutablePath, payloadZipPath);
+
+    if (Directory.Exists(installDir))
+    {
+      Directory.Delete(installDir, true);
+    }
+    Directory.CreateDirectory(installDir);
+
+    ZipFile.ExtractToDirectory(payloadZipPath, installDir);
+    File.WriteAllText(stampPath, PayloadSha256);
+
+    try
+    {
+      Directory.Delete(tempDir, true);
+    }
+    catch
+    {
+    }
+  }
+
+  private static void WritePayloadZip(string selfPath, string payloadZipPath)
+  {
+    byte[] fileBytes = File.ReadAllBytes(selfPath);
+    byte[] markerBytes = Encoding.UTF8.GetBytes(PayloadMarker);
+    int markerIndex = LastIndexOf(fileBytes, markerBytes);
+    if (markerIndex < 0)
+    {
+      throw new InvalidOperationException("Morphus Converter payload was not found. Please download the Windows EXE again.");
+    }
+
+    int payloadOffset = markerIndex + markerBytes.Length;
+    byte[] payloadBytes = new byte[fileBytes.Length - payloadOffset];
+    Buffer.BlockCopy(fileBytes, payloadOffset, payloadBytes, 0, payloadBytes.Length);
+    File.WriteAllBytes(payloadZipPath, payloadBytes);
+  }
+
+  private static int LastIndexOf(byte[] source, byte[] pattern)
+  {
+    for (int index = source.Length - pattern.Length; index >= 0; index--)
+    {
+      bool matched = true;
+      for (int patternIndex = 0; patternIndex < pattern.Length; patternIndex++)
+      {
+        if (source[index + patternIndex] != pattern[patternIndex])
+        {
+          matched = false;
+          break;
+        }
+      }
+
+      if (matched)
+      {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+}
+`;
 }
 
 function run(command, args, options = {}) {
@@ -506,12 +728,49 @@ function getBooleanEnv(name, fallback) {
   return /^(1|true|yes|on)$/i.test(value);
 }
 
+function sha256File(path) {
+  return new Promise((resolveHash, rejectHash) => {
+    const hash = createHash('sha256');
+    const input = createReadStream(path);
+    input.on('data', (chunk) => hash.update(chunk));
+    input.on('error', rejectHash);
+    input.on('end', () => resolveHash(hash.digest('hex')));
+  });
+}
+
+function appendFileFromPath(targetPath, sourcePath) {
+  return new Promise((resolveAppend, rejectAppend) => {
+    const input = createReadStream(sourcePath);
+    const output = createWriteStream(targetPath, { flags: 'a' });
+    let settled = false;
+
+    function settle(error) {
+      if (settled) return;
+      settled = true;
+      if (error) {
+        rejectAppend(error);
+      } else {
+        resolveAppend();
+      }
+    }
+
+    input.on('error', settle);
+    output.on('error', settle);
+    output.on('finish', () => settle());
+    input.pipe(output);
+  });
+}
+
 function slug(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function npxCommand() {
   return process.platform === 'win32' ? 'npx.cmd' : 'npx';
+}
+
+function csharpString(value) {
+  return JSON.stringify(String(value));
 }
 
 function quotePowerShell(value) {
