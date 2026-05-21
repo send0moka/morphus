@@ -2,7 +2,7 @@
 /**
  * Builds a portable Morphus Converter package for the current OS.
  *
- * Run this on macOS to produce the .app package, and on Windows to produce
+ * Run this on macOS to produce the .dmg package, and on Windows to produce
  * the portable Windows folder. Playwright browsers are platform-specific, so
  * this script intentionally packages only the OS it is running on.
  */
@@ -74,7 +74,7 @@ async function main() {
   writePackageReadme(layout.readmeDir || layout.packageRoot, target);
 
   renameStage(stageDir, releaseDir);
-  createArchive(releaseDir, name, target);
+  createPackage(releaseDir, name, target);
 
   console.log(`Built ${releaseDir}`);
 }
@@ -395,18 +395,24 @@ function renameStage(stageDir, releaseDir) {
   renameSync(stageDir, releaseDir);
 }
 
-function createArchive(releaseDir, name, currentTarget) {
-  const zipPath = resolve(OUT_DIR, `${name}.zip`);
-  rmSync(zipPath, { force: true });
-
+function createPackage(releaseDir, name, currentTarget) {
   if (currentTarget === 'macos') {
-    run('ditto', ['-c', '-k', '--sequesterRsrc', releaseDir, zipPath], {
-      cwd: dirname(releaseDir),
-    });
-    console.log(`Created ${zipPath}`);
+    const dmgPath = resolve(OUT_DIR, `${name}.dmg`);
+    rmSync(dmgPath, { force: true });
+    run('hdiutil', [
+      'create',
+      '-volname', 'Morphus Converter',
+      '-srcfolder', releaseDir,
+      '-ov',
+      '-format', 'UDZO',
+      dmgPath,
+    ]);
+    console.log(`Created ${dmgPath}`);
     return;
   }
 
+  const zipPath = resolve(OUT_DIR, `${name}.zip`);
+  rmSync(zipPath, { force: true });
   run('powershell', [
     '-NoProfile',
     '-Command',
@@ -480,13 +486,6 @@ function findSingleDirectory(parent) {
   }
 
   return entries[0];
-}
-
-function copyDirectoryContents(from, to) {
-  mkdirSync(to, { recursive: true });
-  for (const entry of readdirSync(from)) {
-    cpSync(join(from, entry), join(to, entry), { recursive: true });
-  }
 }
 
 function normalizeArch(value) {

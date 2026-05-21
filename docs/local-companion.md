@@ -6,7 +6,7 @@ The companion package includes:
 
 - Node runtime bundled inside the app/folder.
 - Production Morphus server code.
-- Chromium browser downloaded by Playwright.
+- System browser integration by default, with optional bundled Chromium for fully offline builds.
 - Background idle mode after the Figma plugin is closed.
 
 Users do not need to install Node.js.
@@ -45,14 +45,13 @@ brew reinstall --cask morphus-converter
 
 The cask in this repo points at the current internal release version. Update the cask version before publishing a new Homebrew release. For a stricter cask with SHA checksums, use the generated `morphus-converter.v<version>.rb` attached to tag releases.
 
-The release workflow publishes macOS assets with versioned dot-separated filenames such as `Morphus.Converter.macOS.arm64.v0.1.4.zip`. Keep the committed cask URL in sync with that naming so Homebrew does not hit a 404.
+The release workflow publishes macOS assets with versioned dot-separated filenames such as `Morphus.Converter.macOS.arm64.v0.1.4.dmg`. Keep the committed cask URL in sync with that naming so Homebrew does not hit a 404.
 
-### Zip
+### DMG
 
-1. Extract `Morphus.Converter.macOS.<arch>.v<version>.zip`.
-2. Move `Morphus Converter.app` to `Applications`, or keep it in the extracted folder.
-3. Open `Morphus Converter.app`.
-4. If macOS blocks it, right-click the app and choose `Open`.
+1. Open `Morphus.Converter.macOS.<arch>.v<version>.dmg`.
+2. Move `Morphus Converter.app` to `Applications`, or open it directly from the mounted disk image for a quick test.
+3. If macOS blocks it, right-click the app and choose `Open`.
 5. A browser status page opens at `http://localhost:3210`.
 6. Open the Morphus Figma plugin and convert as usual.
 7. Close the Figma plugin when finished. Morphus Converter stays idle in the background.
@@ -77,7 +76,7 @@ Windows users do not need Node.js either; `node.exe` is bundled inside `.runtime
 
 ## Fast Local Testing
 
-Use this loop while developing Morphus. Do not use GitHub Actions or release zips for every small check.
+Use this loop while developing Morphus. Do not use GitHub Actions or release packages for every small check.
 
 1. In Figma, import the plugin directly from this repo: `figma-plugin/manifest.json`.
 2. After editing `figma-plugin/code.js` or `figma-plugin/ui.html`, close and reopen the development plugin in Figma.
@@ -122,12 +121,12 @@ Manual release flow:
 3. Choose `Build Morphus Packages`.
 4. Click `Run workflow`.
 5. To make Homebrew work immediately, enable `publish_release` and fill `release_version`, for example `0.1.0`.
-6. Download the artifact zips after the jobs finish, or use the published GitHub Release assets.
-7. Share the macOS zip with teammates and the Windows zip with Windows users.
+6. Download the artifact packages after the jobs finish, or use the published GitHub Release assets.
+7. Share the macOS DMG with teammates and the Windows zip with Windows users.
 
 Important: Homebrew uses GitHub Release download URLs. A manual workflow run that only produces artifacts is useful for testing, but Homebrew install works after a release is published.
 
-Release zips are intentionally flat. After users choose Extract All, the extracted Figma plugin folder contains `manifest.json` directly, and the extracted Windows converter folder contains `Morphus Converter.vbs` directly.
+Release packages are intentionally simple. The macOS DMG contains `Morphus Converter.app`, the extracted Figma plugin folder contains `manifest.json` directly, and the extracted Windows converter folder contains `Morphus Converter.vbs` directly.
 
 Tag release flow:
 
@@ -139,8 +138,8 @@ git push origin morphus-v0.1.1
 That tag automatically starts the same workflow and publishes a GitHub Release with:
 
 - `Morphus.Figma.Plugin.v<version>.zip` for Figma manifest import.
-- `Morphus.Converter.macOS.arm64.v<version>.zip`.
-- `Morphus.Converter.macOS.x64.v<version>.zip`.
+- `Morphus.Converter.macOS.arm64.v<version>.dmg`.
+- `Morphus.Converter.macOS.x64.v<version>.dmg`.
 - `Morphus.Converter.Windows.x64.v<version>.zip`, when the Windows build succeeds.
 - Versioned `morphus-converter.v<version>.rb` Homebrew Cask with SHA checksums.
 
@@ -162,7 +161,7 @@ npm run converter:build
 Output:
 
 ```text
-out/local-app/Morphus Converter macOS arm64.zip
+out/local-app/Morphus Converter macOS arm64.dmg
 ```
 
 or `x64` on an Intel Mac.
@@ -227,7 +226,7 @@ The portable launchers already set these values.
 ## Limits
 
 - A Figma plugin cannot start a local process by itself. Users still need to open the companion app or launcher once.
-- A zip file cannot safely auto-run code immediately after extraction on macOS or Windows.
+- A downloaded package cannot safely auto-run code immediately after opening/extraction on macOS or Windows.
 - macOS `.app` packages should be signed/notarized before broad internal rollout.
 - Windows Script Host may be disabled by company policy; use `Morphus Converter Debug.cmd` as the fallback launcher in that case.
 - Cross-building is not recommended because Node and Chromium binaries are platform-specific.

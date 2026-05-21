@@ -58,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: out/local-app/*.zip
+          path: out/local-app/*.dmg
           if-no-files-found: error
 
   build-windows:
@@ -139,26 +139,28 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets out/homebrew/Casks
-          find downloaded-artifacts -name '*.zip' -exec cp {} release-assets/ \;
+          find downloaded-artifacts \( -name '*.zip' -o -name '*.dmg' \) -exec cp {} release-assets/ \;
           version="${{ steps.release_meta.outputs.version }}"
           tag="${{ steps.release_meta.outputs.tag }}"
-          for file in release-assets/*.zip; do
-            base_name="$(basename "$file" .zip)"
+          shopt -s nullglob
+          for file in release-assets/*.{zip,dmg}; do
+            ext="${file##*.}"
+            base_name="$(basename "$file" ".$ext")"
             clean_base="$(echo "$base_name" | tr ' ' '.')"
-            versioned_name="${clean_base}.v${version}.zip"
+            versioned_name="${clean_base}.v${version}.${ext}"
             mv "$file" "release-assets/$versioned_name"
           done
           mkdir -p figma-plugin-package
           cp figma-plugin/manifest.json figma-plugin/code.js figma-plugin/ui.html figma-plugin-package/
           (cd figma-plugin-package && zip -r ../release-assets/Morphus.Figma.Plugin.v${version}.zip .)
-          arm_zip="$(find release-assets -name 'Morphus.Converter.macOS.arm64.v*.zip' | head -n 1)"
-          intel_zip="$(find release-assets -name 'Morphus.Converter.macOS.x64.v*.zip' | head -n 1)"
+          arm_dmg="$(find release-assets -name 'Morphus.Converter.macOS.arm64.v*.dmg' | head -n 1)"
+          intel_dmg="$(find release-assets -name 'Morphus.Converter.macOS.x64.v*.dmg' | head -n 1)"
           node scripts/generate-homebrew-cask.js \
             --version "$version" \
             --repo "$GITHUB_REPOSITORY" \
             --tag "$tag" \
-            --arm-zip "$arm_zip" \
-            --intel-zip "$intel_zip" \
+            --arm-dmg "$arm_dmg" \
+            --intel-dmg "$intel_dmg" \
             --release-name-style dotted-versioned \
             --output release-assets/morphus-converter.v${version}.rb
           ls -lh release-assets
