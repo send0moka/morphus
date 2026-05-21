@@ -1505,7 +1505,7 @@ function walkDOMInBrowser() {
   }
 
   function getDirectTextNode(textNode, parentEl, parentStyles) {
-    const normalizedText = normalizeTextFragment(textNode.textContent || '').trim();
+    const normalizedText = normalizeDirectTextNodeContent(textNode);
     if (!normalizedText) {
       return null;
     }
@@ -1551,6 +1551,53 @@ function walkDOMInBrowser() {
       },
       children: [],
     };
+  }
+
+  function normalizeDirectTextNodeContent(textNode) {
+    const normalized = normalizeTextFragment(textNode.textContent || '');
+    const trimmed = normalized.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    const keepLeadingSpace = normalized.startsWith(' ') && hasInlineBoundarySibling(textNode, 'previous');
+    const keepTrailingSpace = normalized.endsWith(' ') && hasInlineBoundarySibling(textNode, 'next');
+    return `${keepLeadingSpace ? ' ' : ''}${trimmed}${keepTrailingSpace ? ' ' : ''}`;
+  }
+
+  function hasInlineBoundarySibling(textNode, direction) {
+    let sibling = direction === 'previous' ? textNode.previousSibling : textNode.nextSibling;
+    while (sibling) {
+      if (sibling.nodeType === Node.TEXT_NODE) {
+        if (normalizeTextFragment(sibling.textContent || '').trim()) {
+          return true;
+        }
+      } else if (sibling.nodeType === Node.ELEMENT_NODE) {
+        if (isInlineBoundaryElement(sibling)) {
+          return true;
+        }
+      }
+
+      sibling = direction === 'previous' ? sibling.previousSibling : sibling.nextSibling;
+    }
+
+    return false;
+  }
+
+  function isInlineBoundaryElement(el) {
+    if (!el || SKIP_TAGS.has(el.tagName)) {
+      return false;
+    }
+
+    const cs = window.getComputedStyle(el);
+    if (!cs || cs.display === 'none' || cs.visibility === 'hidden') {
+      return false;
+    }
+
+    return cs.display === 'inline'
+      || cs.display === 'inline-block'
+      || cs.display === 'inline-flex'
+      || cs.display === 'contents';
   }
 
   function normalizeTextFragment(text) {

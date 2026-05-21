@@ -19,6 +19,8 @@ const FIGMA_FONT_STYLES = {
                'Thin Italic', 'ExtraLight Italic', 'Light Italic', 'Italic', 'Medium Italic',
                'SemiBold Italic', 'Bold Italic', 'ExtraBold Italic', 'Black Italic'],
   'Bebas Neue': ['Regular'],
+  Gelica: ['Regular', 'Medium', 'SemiBold', 'Bold'],
+  'Neulis Neue': ['Regular', 'Medium', 'Semi Bold', 'Bold'],
   'Inter': ['Thin', 'ExtraLight', 'Light', 'Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold', 'Black',
              'Thin Italic', 'ExtraLight Italic', 'Light Italic', 'Italic', 'Medium Italic',
              'SemiBold Italic', 'Bold Italic', 'ExtraBold Italic', 'Black Italic'],
@@ -115,8 +117,9 @@ function resolveFont(cssFamily, weightStr, isItalic) {
     if (!styles) {
       return { family: candidate, style: targetStyle };
     }
-    if (styles.includes(targetStyle)) {
-      return { family: candidate, style: targetStyle };
+    const matchedStyle = findMatchingStyle(styles, targetStyle);
+    if (matchedStyle) {
+      return { family: candidate, style: matchedStyle };
     }
     if (styles.includes('Regular')) {
       return { family: candidate, style: 'Regular' };
@@ -131,6 +134,17 @@ function getFontFamilyStack(cssFamily) {
     .split(',')
     .map((part) => part.trim().replace(/['"]/g, ''))
     .filter(Boolean);
+}
+
+function findMatchingStyle(styles, targetStyle) {
+  const normalizedTarget = normalizeStyleName(targetStyle);
+  return styles.find((style) => normalizeStyleName(style) === normalizedTarget) || null;
+}
+
+function normalizeStyleName(style) {
+  return String(style || '')
+    .replace(/[\s_-]+/g, '')
+    .toLowerCase();
 }
 
 function getGenericFontFamily(stack) {

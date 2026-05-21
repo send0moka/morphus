@@ -26,6 +26,16 @@ test('preserves named font families and still honors available fallback fonts in
       fontWeight: '400',
       fontStyle: 'normal',
     }),
+    node({
+      fontFamily: '"Neulis Neue"',
+      fontWeight: '600',
+      fontStyle: 'normal',
+    }),
+    node({
+      fontFamily: 'Gelica',
+      fontWeight: '600',
+      fontStyle: 'normal',
+    }),
   ]);
 
   const fontMap = await resolveFonts(domTree);
@@ -45,5 +55,13 @@ test('preserves named font families and still honors available fallback fonts in
   expect(fontMap['Some Sans, sans-serif|400|normal']).toEqual({
     family: 'Some Sans',
     style: 'Regular',
+  });
+  expect(fontMap['"Neulis Neue"|600|normal']).toEqual({
+    family: 'Neulis Neue',
+    style: 'Semi Bold',
+  });
+  expect(fontMap['Gelica|600|normal']).toEqual({
+    family: 'Gelica',
+    style: 'SemiBold',
   });
 });

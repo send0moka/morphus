@@ -92,16 +92,18 @@ const AVAILABLE_FONT_NAMES = [
   { family: 'Georgia', style: 'Bold Italic' },
   { family: 'Courier New', style: 'Regular' },
   { family: 'Courier New', style: 'Italic' },
+  { family: 'Bebas Neue', style: 'Regular' },
   { family: 'Playfair Display', style: 'Regular' },
   { family: 'Playfair Display', style: 'Bold' },
 ];
 
-function createFigmaMock() {
+function createFigmaMock(options = {}) {
   const page = makeNode('PAGE');
   const paintStyles = [];
   const textStyles = [];
   const uiMessages = [];
   const notifications = [];
+  const availableFontNames = options.availableFonts || AVAILABLE_FONT_NAMES;
   return {
     page,
     paintStyles,
@@ -140,9 +142,16 @@ function createFigmaMock() {
         };
       },
       async listAvailableFontsAsync() {
-        return AVAILABLE_FONT_NAMES.map((fontName) => ({ fontName }));
+        return availableFontNames.map((fontName) => ({ fontName }));
       },
-      async loadFontAsync() {},
+      async loadFontAsync(fontName) {
+        const found = availableFontNames.some((font) => (
+          font.family === fontName.family && font.style === fontName.style
+        ));
+        if (!found) {
+          throw new Error(`Missing font ${fontName.family} ${fontName.style}`);
+        }
+      },
       async getLocalPaintStylesAsync() {
         return paintStyles;
       },
@@ -383,6 +392,75 @@ test('keeps explicitly truncated text fixed and enables ending ellipsis', async 
   expect(label.textAutoResize).toBe('NONE');
   expect(label.width).toBe(274);
   expect(label.height).toBe(20);
+});
+
+test('uses custom local font style aliases before falling back to Inter', async () => {
+  const { figma, page } = createFigmaMock({
+    availableFonts: [
+      { family: 'Inter', style: 'Regular' },
+      { family: 'Neulis Neue', style: 'Regular' },
+      { family: 'Neulis Neue', style: 'Semi Bold' },
+    ],
+  });
+  const context = {
+    figma,
+    __html__: '',
+    console: { ...console, warn() {} },
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('span.announcement', {
+        width: 120,
+        height: 16,
+        characters: 'Ikuti Program',
+        fontName: { family: 'Neulis Neue', style: 'SemiBold' },
+      }),
+    ],
+  });
+
+  const label = page.children[0];
+  expect(label.fontName).toEqual({ family: 'Neulis Neue', style: 'Semi Bold' });
+});
+
+test('notifies when a requested font falls back to Inter', async () => {
+  const { figma, page, notifications } = createFigmaMock({
+    availableFonts: [
+      { family: 'Inter', style: 'Regular' },
+    ],
+  });
+  const context = {
+    figma,
+    __html__: '',
+    console: { ...console, warn() {} },
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('span.announcement', {
+        width: 120,
+        height: 16,
+        characters: 'Ikuti Program',
+        fontName: { family: 'Neulis Neue', style: 'Semi Bold' },
+      }),
+    ],
+  });
+
+  const label = page.children[0];
+  expect(label.fontName).toEqual({ family: 'Inter', style: 'Regular' });
+  expect(notifications[0]).toContain('Morphus font fallback: Neulis Neue Semi Bold');
 });
 
 test('uses auto width for table-cell nowrap text', async () => {

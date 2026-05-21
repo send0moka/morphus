@@ -291,7 +291,8 @@ async function buildFromSnapshot(data, options = {}) {
   await ensureCurrentPageLoaded();
 
   reportProgress(options, 'Pre-loading fonts...', 91);
-  await preloadFonts(figmaTree);
+  const fontSummary = await preloadFonts(figmaTree);
+  reportFontFallbacks(fontSummary, options);
 
   reportProgress(options, 'Creating local styles...', 94);
   const styleRegistry = await createLocalStylesFromTree(figmaTree, styleNamespace);
@@ -422,6 +423,7 @@ async function preloadFonts(nodes) {
   const fallback = { family: 'Inter', style: 'Regular' };
   const requestsByKey = {};
   const resolvedByKey = {};
+  const fallbackReports = [];
 
   addFontRequest(requestsByKey, fallback);
 
@@ -444,6 +446,53 @@ async function preloadFonts(nodes) {
   for (let index = 0; index < (nodes || []).length; index++) {
     applyPreloadedFonts(nodes[index], resolvedByKey, fallback);
   }
+
+  for (let index = 0; index < keys.length; index++) {
+    const requested = requestsByKey[keys[index]];
+    const resolved = resolvedByKey[keys[index]] || fallback;
+    if (isFontFallback(requested, resolved)) {
+      fallbackReports.push({
+        requested: requested,
+        resolved: resolved,
+      });
+    }
+  }
+
+  return { fallbacks: fallbackReports };
+}
+
+function reportFontFallbacks(fontSummary, options) {
+  const fallbacks = fontSummary && fontSummary.fallbacks ? fontSummary.fallbacks : [];
+  if (!fallbacks.length) {
+    return;
+  }
+
+  const unique = {};
+  const names = [];
+  for (let index = 0; index < fallbacks.length; index++) {
+    const requested = fallbacks[index].requested;
+    const label = formatFontName(requested);
+    if (!unique[label]) {
+      unique[label] = true;
+      names.push(label);
+    }
+  }
+
+  const shown = names.slice(0, 4).join(', ');
+  const extra = names.length > 4 ? ` +${names.length - 4} more` : '';
+  const message = `Morphus font fallback: ${shown}${extra}. Install these fonts locally or Figma will use Inter.`;
+
+  if (options && options.notify === false) {
+    return;
+  }
+
+  try {
+    figma.notify(message);
+  } catch (err) { }
+
+  try {
+    console.warn(`[Morphus] ${message}`);
+  } catch (err) { }
 }
 
 function collectFontRequests(node, requestsByKey, fallback) {
@@ -505,6 +554,25 @@ function addFontRequest(requestsByKey, font) {
 function getResolvedFontName(font, resolvedByKey, fallback) {
   const normalized = normalizeFontName(font) || fallback;
   return resolvedByKey[getFontCacheKey(normalized)] || fallback;
+}
+
+function isFontFallback(requested, resolved) {
+  const normalizedRequested = normalizeFontName(requested);
+  const normalizedResolved = normalizeFontName(resolved);
+  if (!normalizedRequested || !normalizedResolved) {
+    return false;
+  }
+
+  return normalizedRequested.family !== normalizedResolved.family
+    || normalizeFontStyleKey(normalizedRequested.style) !== normalizeFontStyleKey(normalizedResolved.style);
+}
+
+function formatFontName(font) {
+  const normalized = normalizeFontName(font);
+  if (!normalized) {
+    return 'Unknown font';
+  }
+  return `${normalized.family} ${normalized.style || 'Regular'}`;
 }
 
 async function listAvailableFontsByFamily() {
@@ -571,6 +639,14 @@ function getFontCacheKey(font) {
 function buildFontCandidateList(requested, availableByFamily) {
   const candidates = [];
   const families = [requested.family, 'Inter'];
+  const requestedStyles = getFontStyleAliases(requested.style);
+
+  for (let styleIndex = 0; styleIndex < requestedStyles.length; styleIndex++) {
+    pushUniqueFont(candidates, {
+      family: requested.family,
+      style: requestedStyles[styleIndex],
+    });
+  }
 
   for (let familyIndex = 0; familyIndex < families.length; familyIndex++) {
     const family = families[familyIndex];
@@ -615,8 +691,9 @@ function pushUniqueFont(target, font) {
 }
 
 function findExactFont(pool, style) {
+  const normalizedStyle = normalizeFontStyleKey(style);
   for (let index = 0; index < pool.length; index++) {
-    if (pool[index].style === style) {
+    if (normalizeFontStyleKey(pool[index].style) === normalizedStyle) {
       return pool[index];
     }
   }
@@ -657,20 +734,56 @@ function fontDistance(targetStyle, candidateStyle) {
 }
 
 function fontWeightFromStyle(style) {
-  const normalized = String(style || '').replace(/\s+Italic$/i, '').trim();
+  const normalized = normalizeFontStyleKey(String(style || '').replace(/\s+Italic$/i, ''));
   const map = {
-    Thin: 100,
-    ExtraLight: 200,
-    Light: 300,
-    Regular: 400,
-    Medium: 500,
-    SemiBold: 600,
-    Bold: 700,
-    ExtraBold: 800,
-    Black: 900,
+    thin: 100,
+    extralight: 200,
+    light: 300,
+    regular: 400,
+    medium: 500,
+    semibold: 600,
+    demibold: 600,
+    bold: 700,
+    extrabold: 800,
+    black: 900,
   };
 
   return map[normalized] || 400;
+}
+
+function getFontStyleAliases(style) {
+  const source = String(style || 'Regular').trim() || 'Regular';
+  const aliases = [source];
+  const base = source.replace(/\s+Italic$/i, '');
+  const italicSuffix = /\s+Italic$/i.test(source) ? ' Italic' : '';
+  const normalizedBase = normalizeFontStyleKey(base);
+  const spacedByKey = {
+    extralight: 'Extra Light',
+    semibold: 'Semi Bold',
+    demibold: 'Demi Bold',
+    extrabold: 'Extra Bold',
+  };
+  const compactByKey = {
+    extralight: 'ExtraLight',
+    semibold: 'SemiBold',
+    demibold: 'DemiBold',
+    extrabold: 'ExtraBold',
+  };
+
+  if (spacedByKey[normalizedBase]) {
+    aliases.push(spacedByKey[normalizedBase] + italicSuffix);
+  }
+  if (compactByKey[normalizedBase]) {
+    aliases.push(compactByKey[normalizedBase] + italicSuffix);
+  }
+
+  return aliases;
+}
+
+function normalizeFontStyleKey(style) {
+  return String(style || '')
+    .replace(/[\s_-]+/g, '')
+    .toLowerCase();
 }
 
 function isItalicStyle(style) {

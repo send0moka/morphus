@@ -179,6 +179,34 @@ test('collapses semantic inline phrasing content into one text container', async
   expect(htmlRun.computed.textDecorationColor).toBe('rgb(100, 216, 255)');
 }, 30000);
 
+test('preserves collapsed spaces between direct inline text nodes and styled spans', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; }
+      p { font-size: 24px; line-height: 32px; }
+      b { font-weight: 700; }
+      a { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+      svg { width: 16px; height: 16px; }
+    </style>
+    <p class="announcement">Lebih dari <b>1000+ sekolah</b> dan <b>pendidik</b> telah bergabung. <a><span>Ikuti Program</span><svg viewBox="0 0 16 16"></svg></a></p>
+  `, {
+    width: 960,
+    height: 160,
+  });
+
+  const announcement = find(domTree, (node) => node.classList?.includes('announcement'));
+  const childTexts = announcement.children
+    .filter((child) => child.isTextContainer)
+    .map((child) => child.text);
+
+  expect(announcement.isTextContainer).toBe(false);
+  expect(childTexts).toEqual(expect.arrayContaining([
+    'Lebih dari ',
+    ' dan ',
+    ' telah bergabung. ',
+  ]));
+}, 30000);
+
 test('splits wrapped inline visual boxes into painted line fragments', async () => {
   const { domTree } = await extractFromHtml(`
     <style>
