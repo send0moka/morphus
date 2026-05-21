@@ -75,6 +75,30 @@ For smoother company-wide distribution, sign and notarize the `.app` with an App
 
 Windows users do not need Node.js either; `node.exe` is bundled inside `.runtime/node`.
 
+## Fast Local Testing
+
+Use this loop while developing Morphus. Do not use GitHub Actions or release zips for every small check.
+
+1. In Figma, import the plugin directly from this repo: `figma-plugin/manifest.json`.
+2. After editing `figma-plugin/code.js` or `figma-plugin/ui.html`, close and reopen the development plugin in Figma.
+3. After editing converter code such as `src/figma/mapper.js`, stop the packaged Morphus Converter first because it owns port `3210`.
+4. Start the source converter from this repo:
+
+```powershell
+npm run dev:converter
+```
+
+On Windows you can also double-click `Morphus Dev Converter.cmd`.
+
+5. Keep using the same development plugin in Figma. It still talks to `http://localhost:3210`, but now that server is the source code in this repo.
+6. Run the focused tests before checking in:
+
+```powershell
+npm test -- --runInBand tests/figma-plugin.test.js tests/mapper.test.js
+```
+
+Only use the full commit, push, workflow, download, extract flow when testing the final release package exactly like a new user.
+
 ## Build Packages
 
 Build packages on the same OS as the target package. This matters because Playwright downloads Chromium for the current OS.

@@ -2183,7 +2183,7 @@ function applyTextSizing(text, spec, parentLayoutMode) {
 }
 
 function applyTextTruncation(text, spec) {
-  if (!text || spec?.textTruncation !== 'ENDING') {
+  if (!text || !spec || spec.textTruncation !== 'ENDING') {
     return;
   }
 

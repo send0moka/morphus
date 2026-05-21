@@ -185,6 +185,16 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
+server.on('error', (error) => {
+  if (error && error.code === 'EADDRINUSE') {
+    const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
+    console.error(`Morphus server could not start because http://${displayHost}:${PORT} is already in use.`);
+    console.error('Close the packaged Morphus Converter before starting the dev converter.');
+    process.exit(1);
+  }
+  throw error;
+});
+
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
   console.log(`Morphus server listening on http://${displayHost}:${PORT}`);

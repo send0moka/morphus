@@ -9,6 +9,7 @@
     "start": "node scripts/server.js",
     "server": "node scripts/server.js",
     "local:server": "node scripts/local-companion.js",
+    "dev:converter": "node scripts/dev-converter.js",
     "converter:build": "node scripts/build-local-app.js",
     "local-app:build": "node scripts/build-local-app.js",
     "homebrew:cask": "node scripts/generate-homebrew-cask.js",
@@ -20,6 +21,7 @@
     "playwright-core": "^1.60.0"
   },
   "devDependencies": {
+    "esprima": "^4.0.1",
     "jest": "^29.7.0",
     "playwright": "^1.60.0"
   }

@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import esprima from 'esprima';
+
+test('uses syntax accepted by the Figma plugin runtime', () => {
+  expect(() => esprima.parseScript(readFileSync('./figma-plugin/code.js', 'utf8'))).not.toThrow();
+});
 
 function makeNode(type) {
   return {
