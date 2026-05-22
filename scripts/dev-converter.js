@@ -17,6 +17,7 @@ setDefaultEnv('MORPHUS_MAX_QUEUED_JOBS', '12');
 setDefaultEnv('MORPHUS_IDLE_SHUTDOWN_MS', '0');
 setDefaultEnv('MORPHUS_RENDER_TIMEOUT_MS', '120000');
 setDefaultEnv('MORPHUS_JOB_TIMEOUT_MS', '150000');
+setDefaultEnv('MORPHUS_INSTALL_WEB_FONTS', '1');
 
 const statusUrl = `http://localhost:${process.env.MORPHUS_PORT || '3210'}/`;
 const timer = setTimeout(() => openExternal(statusUrl), 800);

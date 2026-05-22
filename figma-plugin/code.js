@@ -292,7 +292,7 @@ async function buildFromSnapshot(data, options = {}) {
 
   reportProgress(options, 'Pre-loading fonts...', 91);
   const fontSummary = await preloadFonts(figmaTree);
-  reportFontFallbacks(fontSummary, options);
+  reportFontFallbacks(fontSummary, options, data.meta && data.meta.webFonts);
 
   reportProgress(options, 'Creating local styles...', 94);
   const styleRegistry = await createLocalStylesFromTree(figmaTree, styleNamespace);
@@ -461,7 +461,7 @@ async function preloadFonts(nodes) {
   return { fallbacks: fallbackReports };
 }
 
-function reportFontFallbacks(fontSummary, options) {
+function reportFontFallbacks(fontSummary, options, webFontMeta) {
   const fallbacks = fontSummary && fontSummary.fallbacks ? fontSummary.fallbacks : [];
   if (!fallbacks.length) {
     return;
@@ -480,7 +480,11 @@ function reportFontFallbacks(fontSummary, options) {
 
   const shown = names.slice(0, 4).join(', ');
   const extra = names.length > 4 ? ` +${names.length - 4} more` : '';
-  const message = `Morphus font fallback: ${shown}${extra}. Install these fonts locally or Figma will use Inter.`;
+  const installedCount = webFontMeta && Array.isArray(webFontMeta.installed) ? webFontMeta.installed.length : 0;
+  const instruction = installedCount > 0
+    ? 'Morphus installed web fonts; restart Figma if they do not appear yet.'
+    : 'Install these fonts locally or Figma will use Inter.';
+  const message = `Morphus font fallback: ${shown}${extra}. ${instruction}`;
 
   if (options && options.notify === false) {
     return;

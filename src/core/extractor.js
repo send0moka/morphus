@@ -8,6 +8,7 @@ import { chromium } from 'playwright-core';
 import { existsSync, statSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { pathToFileURL } from 'url';
+import { createWebFontCollector } from './web-fonts.js';
 
 const DEFAULT_RENDER_TIMEOUT_MS = 120000;
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 15000;
@@ -22,8 +23,11 @@ export async function extractFromFile(filePath, { width = 1440, height = 900, re
   const absPath = resolve(filePath);
   return withBrowser(renderTimeoutMs, async (browser) => {
     const page = await createPage(browser, { width, height });
+    const webFontCollector = createWebFontCollector(page);
     await gotoPageIfPossible(page, pathToFileURL(absPath).href);
-    return extractFromPage(page);
+    const result = await extractFromPage(page);
+    result.webFonts = await webFontCollector.collectFromPage();
+    return result;
   });
 }
 
@@ -35,10 +39,13 @@ export async function extractFromFile(filePath, { width = 1440, height = 900, re
 export async function extractFromHtml(html, { width = 1440, height = 900, baseUrl = null, renderTimeoutMs = getRenderTimeoutMs() } = {}) {
   return withBrowser(renderTimeoutMs, async (browser) => {
     const page = await createPage(browser, { width, height });
+    const webFontCollector = createWebFontCollector(page);
     const htmlWithBase = injectBaseHref(html, normalizeBaseUrl(baseUrl));
 
     await setPageContentIfPossible(page, htmlWithBase);
-    return extractFromPage(page);
+    const result = await extractFromPage(page);
+    result.webFonts = await webFontCollector.collectFromPage();
+    return result;
   });
 }
 
@@ -54,6 +61,7 @@ async function extractFromPage(page) {
 async function stabilizePage(page) {
   await waitForLoadStateIfPossible(page, 'load', getNavigationTimeoutMs());
   await waitForLoadStateIfPossible(page, 'networkidle', getNetworkIdleTimeoutMs());
+  await waitForFonts(page);
 
   // Wait for all images to finish loading completely (with a 2-second timeout)
   await page.evaluate(async () => {
@@ -498,6 +506,22 @@ async function stabilizePage(page) {
   });
 
   await waitForCanvasPaint(page);
+}
+
+async function waitForFonts(page) {
+  try {
+    await page.evaluate(async () => {
+      if (!document.fonts || !document.fonts.ready) {
+        return;
+      }
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    });
+  } catch (error) {
+    // Font readiness is best effort; extraction can continue with fallback metrics.
+  }
 }
 
 async function waitForLayoutStability(page) {

@@ -4,6 +4,7 @@
  */
 
 import { extractFromFile, extractFromHtml } from '../core/extractor.js';
+import { installWebFontsForDom } from '../core/web-fonts.js';
 import { resolveFonts } from '../figma/font-resolver.js';
 import { sortByZIndex } from '../figma/z-index-sorter.js';
 import { buildFigmaTree } from '../figma/mapper.js';
@@ -44,8 +45,10 @@ export async function convertHtmlString(html, options = {}) {
 
 async function convertWithExtractor({ extractor, source, viewport, baseUrl = null, onProgress = null }) {
   progress(onProgress, 5, 'Extracting page...');
-  const { domTree, title } = await extractor();
+  const { domTree, title, webFonts } = await extractor();
 
+  progress(onProgress, 74, 'Installing web fonts...');
+  const fontInstallation = await installWebFontsForDom(domTree, webFonts);
   progress(onProgress, 78, 'Resolving fonts...');
   const fontMap = await resolveFonts(domTree);
   progress(onProgress, 86, 'Building Figma tree...');
@@ -61,9 +64,37 @@ async function convertWithExtractor({ extractor, source, viewport, baseUrl = nul
       ...(documentTitle ? { title: documentTitle } : {}),
       viewport,
       ...(baseUrl ? { baseUrl } : {}),
+      ...getFontInstallMeta(fontInstallation),
     },
     warnings: [],
     figmaTree,
+  };
+}
+
+function getFontInstallMeta(summary) {
+  if (!summary || !summary.enabled) {
+    return {};
+  }
+
+  const installed = [...(summary.installed || []), ...(summary.reused || [])]
+    .map((font) => ({
+      family: font.family,
+      style: font.style,
+    }));
+
+  if (!installed.length && !(summary.errors || []).length) {
+    return {};
+  }
+
+  return {
+    webFonts: {
+      installed,
+      errors: (summary.errors || []).map((error) => ({
+        family: error.family,
+        style: error.style,
+        message: error.message,
+      })),
+    },
   };
 }
 

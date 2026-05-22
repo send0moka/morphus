@@ -132,6 +132,8 @@ async function bundleAppSources(appDir) {
     external: [
       // Playwright resolves browser metadata relative to its package root.
       'playwright-core',
+      // fonteditor-core loads its woff2 WASM relative to its package root.
+      'fonteditor-core',
     ],
   });
 
@@ -141,10 +143,13 @@ async function bundleAppSources(appDir) {
     private: true,
     type: 'commonjs',
     dependencies: {
+      'fonteditor-core': PACKAGE.dependencies?.['fonteditor-core'] || '^2.6.3',
       'playwright-core': PACKAGE.dependencies?.['playwright-core'] || `^${PLAYWRIGHT_VERSION}`,
     },
   }, null, 2), 'utf8');
 
+  copyRuntimeDependency('@xmldom/xmldom', appDir);
+  copyRuntimeDependency('fonteditor-core', appDir);
   copyRuntimeDependency('playwright-core', appDir);
 }
 

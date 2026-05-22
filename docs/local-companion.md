@@ -7,6 +7,7 @@ The companion package includes:
 - Node runtime bundled inside the app/folder.
 - Production Morphus server code.
 - System browser integration by default, with optional bundled Chromium for fully offline builds.
+- Web font capture and per-user font installation for fonts referenced by the loaded HTML.
 - Background idle mode after the Figma plugin is closed.
 
 Users do not need to install Node.js.
@@ -73,6 +74,17 @@ For smoother company-wide distribution, sign and notarize the `.app` with an App
 9. If Windows SmartScreen appears, choose `More info` and `Run anyway`, or use a signed build for company-wide rollout.
 
 Windows users do not need Node.js either; `node.exe` is bundled inside `.runtime/node`.
+
+## Web Font Handling
+
+When Morphus Converter runs in local mode, it captures `@font-face` rules from the loaded HTML and stylesheets. If the page uses a web font that is not already available to Figma, the converter downloads the font source, converts WOFF/WOFF2/OTF to an installable TTF when needed, rewrites the internal font family/style names to match the CSS request, and installs the result for the current user.
+
+Install targets:
+
+- macOS: `~/Library/Fonts`
+- Windows: `%LOCALAPPDATA%\Microsoft\Windows\Fonts`, plus a current-user font registry entry and a `WM_FONTCHANGE` broadcast
+
+Figma may still need a reload or restart before a just-installed font appears in `figma.listAvailableFontsAsync()`. If the plugin falls back on the first run, retry after reloading the Figma file or restarting the Figma desktop app.
 
 ## Fast Local Testing
 
@@ -219,6 +231,9 @@ MORPHUS_JOB_TIMEOUT_MS=150000
 MORPHUS_BROWSER_CHANNEL=msedge
 MORPHUS_CHROMIUM_EXECUTABLE_PATH=<optional absolute browser path>
 PLAYWRIGHT_BROWSERS_PATH=<offline package>/app/browsers
+MORPHUS_INSTALL_WEB_FONTS=1
+MORPHUS_WINDOWS_FONT_DIR=<optional Windows font install folder>
+MORPHUS_MACOS_FONT_DIR=<optional macOS font install folder>
 ```
 
 The portable launchers already set these values.
@@ -229,4 +244,5 @@ The portable launchers already set these values.
 - A downloaded package cannot safely auto-run code before the user opens the macOS app or Windows EXE.
 - macOS `.app` packages should be signed/notarized before broad internal rollout.
 - The Windows EXE should be code-signed before broad internal rollout to reduce SmartScreen and company-policy friction.
+- Auto-installed web fonts must still allow local installation under their font license.
 - Cross-building is not recommended because Node and Chromium binaries are platform-specific.
