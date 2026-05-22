@@ -104,6 +104,9 @@ function createFigmaMock(options = {}) {
   const uiMessages = [];
   const notifications = [];
   const availableFontNames = options.availableFonts || AVAILABLE_FONT_NAMES;
+  const getAvailableFontNames = () => (
+    typeof availableFontNames === 'function' ? availableFontNames() : availableFontNames
+  );
   return {
     page,
     paintStyles,
@@ -142,10 +145,10 @@ function createFigmaMock(options = {}) {
         };
       },
       async listAvailableFontsAsync() {
-        return availableFontNames.map((fontName) => ({ fontName }));
+        return getAvailableFontNames().map((fontName) => ({ fontName }));
       },
       async loadFontAsync(fontName) {
-        const found = availableFontNames.some((font) => (
+        const found = getAvailableFontNames().some((font) => (
           font.family === fontName.family && font.style === fontName.style
         ));
         if (!found) {
@@ -426,6 +429,59 @@ test('uses custom local font style aliases before falling back to Inter', async 
   });
 
   const label = page.children[0];
+  expect(label.fontName).toEqual({ family: 'Neulis Neue', style: 'Semi Bold' });
+});
+
+test('waits for installed web fonts to become available before building text', async () => {
+  let availabilityChecks = 0;
+  const { figma, page } = createFigmaMock({
+    availableFonts: () => {
+      availabilityChecks += 1;
+      if (availabilityChecks >= 5) {
+        return [
+          { family: 'Inter', style: 'Regular' },
+          { family: 'Neulis Neue', style: 'Regular' },
+          { family: 'Neulis Neue', style: 'Semi Bold' },
+        ];
+      }
+      return [
+        { family: 'Inter', style: 'Regular' },
+      ];
+    },
+  });
+  const context = {
+    figma,
+    __html__: '',
+    console: { ...console, warn() {} },
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    meta: {
+      webFonts: {
+        installed: [
+          { family: 'Neulis Neue', style: 'SemiBold' },
+        ],
+        errors: [],
+      },
+    },
+    figmaTree: [
+      textSpec('span.announcement', {
+        width: 120,
+        height: 16,
+        characters: 'Ikuti Program',
+        fontName: { family: 'Neulis Neue', style: 'SemiBold' },
+      }),
+    ],
+  });
+
+  const label = page.children[0];
+  expect(availabilityChecks).toBeGreaterThanOrEqual(5);
   expect(label.fontName).toEqual({ family: 'Neulis Neue', style: 'Semi Bold' });
 });
 

@@ -290,9 +290,10 @@ async function buildFromSnapshot(data, options = {}) {
 
   await ensureCurrentPageLoaded();
 
-  reportProgress(options, 'Pre-loading fonts...', 91);
-  const fontSummary = await preloadFonts(figmaTree);
-  reportFontFallbacks(fontSummary, options, data.meta && data.meta.webFonts);
+  const webFontMeta = data.meta && data.meta.webFonts;
+  reportProgress(options, hasWebFontsForPreload(webFontMeta) ? 'Waiting for web fonts...' : 'Pre-loading fonts...', 91);
+  const fontSummary = await preloadFonts(figmaTree, webFontMeta);
+  reportFontFallbacks(fontSummary, options, webFontMeta);
 
   reportProgress(options, 'Creating local styles...', 94);
   const styleRegistry = await createLocalStylesFromTree(figmaTree, styleNamespace);
@@ -417,9 +418,10 @@ function isValidCodePoint(number) {
 // Font pre-loading
 
 const loadedFontPromises = {};
+const WEB_FONT_READY_TIMEOUT_MS = 8000;
+const WEB_FONT_READY_POLL_MS = 250;
 
-async function preloadFonts(nodes) {
-  const availableByFamily = await listAvailableFontsByFamily();
+async function preloadFonts(nodes, webFontMeta) {
   const fallback = { family: 'Inter', style: 'Regular' };
   const requestsByKey = {};
   const resolvedByKey = {};
@@ -432,6 +434,9 @@ async function preloadFonts(nodes) {
   }
 
   const keys = Object.keys(requestsByKey);
+  let availableByFamily = await listAvailableFontsByFamily();
+  availableByFamily = await waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, availableByFamily);
+
   await Promise.all(keys.map((key) => {
     const requested = requestsByKey[key];
     return loadBestAvailableFont(requested, availableByFamily)
@@ -459,6 +464,96 @@ async function preloadFonts(nodes) {
   }
 
   return { fallbacks: fallbackReports };
+}
+
+function hasWebFontsForPreload(webFontMeta) {
+  return getInstalledWebFonts(webFontMeta).length > 0;
+}
+
+async function waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, initialAvailableByFamily) {
+  const webFontRequests = getWebFontRequests(requestsByKey, webFontMeta);
+  if (!webFontRequests.length) {
+    return initialAvailableByFamily;
+  }
+
+  const startedAt = Date.now();
+  let availableByFamily = initialAvailableByFamily || {};
+
+  while (Date.now() - startedAt <= WEB_FONT_READY_TIMEOUT_MS) {
+    const missing = [];
+    for (let index = 0; index < webFontRequests.length; index++) {
+      if (!await isWebFontRequestReady(webFontRequests[index], availableByFamily)) {
+        missing.push(webFontRequests[index]);
+      }
+    }
+
+    if (!missing.length) {
+      return availableByFamily;
+    }
+
+    await sleep(WEB_FONT_READY_POLL_MS);
+    availableByFamily = await listAvailableFontsByFamily();
+  }
+
+  return availableByFamily;
+}
+
+function getWebFontRequests(requestsByKey, webFontMeta) {
+  const installedFonts = getInstalledWebFonts(webFontMeta);
+  if (!installedFonts.length) {
+    return [];
+  }
+
+  const installedFamilies = {};
+  for (let index = 0; index < installedFonts.length; index++) {
+    const installed = normalizeFontName(installedFonts[index]);
+    if (installed) {
+      installedFamilies[normalizeFontFamilyKey(installed.family)] = true;
+    }
+  }
+
+  const requests = [];
+  const seen = {};
+  const keys = Object.keys(requestsByKey || {});
+  for (let index = 0; index < keys.length; index++) {
+    const request = normalizeFontName(requestsByKey[keys[index]]);
+    if (!request || !installedFamilies[normalizeFontFamilyKey(request.family)]) {
+      continue;
+    }
+
+    const key = getFontCacheKey(request);
+    if (!seen[key]) {
+      seen[key] = true;
+      requests.push(request);
+    }
+  }
+
+  return requests;
+}
+
+function getInstalledWebFonts(webFontMeta) {
+  if (!webFontMeta || !Array.isArray(webFontMeta.installed)) {
+    return [];
+  }
+  return webFontMeta.installed;
+}
+
+async function isWebFontRequestReady(requested, availableByFamily) {
+  const candidates = buildFontCandidateList(requested, availableByFamily || {});
+  const requestedFamilyKey = normalizeFontFamilyKey(requested.family);
+
+  for (let index = 0; index < candidates.length; index++) {
+    if (normalizeFontFamilyKey(candidates[index].family) !== requestedFamilyKey) {
+      continue;
+    }
+
+    try {
+      await loadFontCached(candidates[index]);
+      return true;
+    } catch (err) { }
+  }
+
+  return false;
 }
 
 function reportFontFallbacks(fontSummary, options, webFontMeta) {
@@ -788,6 +883,10 @@ function normalizeFontStyleKey(style) {
   return String(style || '')
     .replace(/[\s_-]+/g, '')
     .toLowerCase();
+}
+
+function normalizeFontFamilyKey(family) {
+  return String(family || '').trim().toLowerCase();
 }
 
 function isItalicStyle(style) {

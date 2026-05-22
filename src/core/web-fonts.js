@@ -108,8 +108,9 @@ export async function installWebFontsForDom(domTree, webFonts, options = {}) {
   mkdirSync(target.dir, { recursive: true });
 
   for (const task of tasks) {
+    let source = null;
     try {
-      const source = await loadFontSource(task.face, responseByUrl);
+      source = await loadFontSource(task.face, responseByUrl);
       if (!source) {
         summary.skipped.push({ family: task.family, style: task.styleName, reason: 'source-unavailable' });
         continue;
@@ -140,8 +141,10 @@ export async function installWebFontsForDom(domTree, webFonts, options = {}) {
 
       const entry = {
         family: task.family,
-        style: task.styleName,
+        style: prepared.styleName || task.styleName,
         sourceUrl: source.url,
+        format: prepared.format,
+        rawFallback: prepared.rawFallback || false,
       };
       if (wasAlreadyPresent) {
         summary.reused.push(entry);
@@ -153,6 +156,9 @@ export async function installWebFontsForDom(domTree, webFonts, options = {}) {
         family: task.family,
         style: task.styleName,
         message: error && error.message ? error.message : String(error),
+        sourceUrl: source?.url || '',
+        format: source?.format || '',
+        signature: source?.buffer ? getFontSignature(source.buffer) : '',
       });
     }
   }
@@ -377,7 +383,11 @@ async function loadFontSource(face, responseByUrl) {
       return {
         url: source.url,
         buffer: response.buffer,
-        format: source.format || response.format,
+        format: resolveDownloadedFontFormat(response.buffer, {
+          url: source.url,
+          contentType: response.contentType,
+          declaredFormat: source.format || response.format,
+        }),
       };
     }
   }
@@ -399,13 +409,27 @@ async function downloadFontSource(source) {
 
   if (source.url.startsWith('data:')) {
     const buffer = bufferFromDataUrl(source.url);
-    return buffer ? { url: source.url, buffer, format: source.format || detectFontFormat(buffer, source.url, '') } : null;
+    return buffer ? {
+      url: source.url,
+      buffer,
+      format: resolveDownloadedFontFormat(buffer, {
+        url: source.url,
+        declaredFormat: source.format,
+      }),
+    } : null;
   }
 
   if (source.url.startsWith('file:')) {
     const path = new URL(source.url);
     const buffer = readFileSync(path);
-    return { url: source.url, buffer, format: source.format || detectFontFormat(buffer, source.url, '') };
+    return {
+      url: source.url,
+      buffer,
+      format: resolveDownloadedFontFormat(buffer, {
+        url: source.url,
+        declaredFormat: source.format,
+      }),
+    };
   }
 
   const response = await fetch(source.url, {
@@ -421,46 +445,98 @@ async function downloadFontSource(source) {
   return {
     url: source.url,
     buffer,
-    format: source.format || detectFontFormat(buffer, source.url, response.headers.get('content-type') || ''),
+    format: resolveDownloadedFontFormat(buffer, {
+      url: source.url,
+      contentType: response.headers.get('content-type') || '',
+      declaredFormat: source.format,
+    }),
   };
 }
 
 async function prepareInstallableFont(buffer, { format, family, styleName }) {
-  const sourceFormat = format || detectFontFormat(buffer, '', '');
+  const sourceFormat = resolveDownloadedFontFormat(buffer, { declaredFormat: format });
   if (!sourceFormat || !FONT_EXTENSIONS.has(sourceFormat)) {
     return null;
   }
 
   if (sourceFormat === 'woff2') {
     await ensureWoff2Ready();
+    const decoded = Buffer.from(woff2.decode(buffer));
+    const decodedFormat = resolveDownloadedFontFormat(decoded);
+    if (decodedFormat === 'ttf' || decodedFormat === 'otf') {
+      return prepareSfntFont(decoded, {
+        format: decodedFormat,
+        family,
+        styleName,
+        rawFallback: true,
+      });
+    }
+    return null;
   }
 
-  const font = createFont(buffer, {
-    type: sourceFormat,
-    hinting: true,
-    kerning: true,
-    inflate: sourceFormat === 'woff' ? (data) => inflateSync(data) : undefined,
+  if (sourceFormat === 'ttf' || sourceFormat === 'otf') {
+    return prepareSfntFont(buffer, {
+      format: sourceFormat,
+      family,
+      styleName,
+      rawFallback: true,
+    });
+  }
+
+  return prepareSfntFont(buffer, {
+    format: sourceFormat,
+    family,
+    styleName,
+    rawFallback: false,
   });
+}
 
-  patchFontNames(font, family, styleName);
+function prepareSfntFont(buffer, { format, family, styleName, rawFallback = false }) {
+  let font = null;
+  try {
+    font = createFont(buffer, {
+      type: format,
+      hinting: true,
+      kerning: true,
+      inflate: format === 'woff' ? (data) => inflateSync(data) : undefined,
+    });
+  } catch (error) {
+    if (rawFallback && (format === 'ttf' || format === 'otf')) {
+      return {
+        buffer,
+        extension: format,
+        format,
+        rawFallback: true,
+      };
+    }
+    throw error;
+  }
 
-  if (sourceFormat === 'otf') {
+  const installedStyleName = patchFontNames(font, family, styleName);
+
+  if (format === 'otf') {
     return {
       buffer: Buffer.from(font.write({ type: 'ttf', hinting: true, kerning: true })),
       extension: 'ttf',
+      format,
+      styleName: installedStyleName,
     };
   }
 
-  if (sourceFormat === 'ttf') {
+  if (format === 'ttf') {
     return {
       buffer: Buffer.from(font.write({ type: 'ttf', hinting: true, kerning: true })),
       extension: 'ttf',
+      format,
+      styleName: installedStyleName,
     };
   }
 
   return {
     buffer: Buffer.from(font.write({ type: 'ttf', hinting: true, kerning: true })),
     extension: 'ttf',
+    format,
+    styleName: installedStyleName,
   };
 }
 
@@ -470,12 +546,27 @@ function patchFontNames(font, family, styleName) {
     data.name = {};
   }
 
-  const postScriptName = `${family}-${styleName}`.replace(/[^A-Za-z0-9-]+/g, '');
+  const installedStyleName = getInstalledStyleName(data.name.fontSubFamily, styleName);
+  const postScriptName = `${family}-${installedStyleName}`.replace(/[^A-Za-z0-9-]+/g, '');
   data.name.fontFamily = family;
-  data.name.fontSubFamily = styleName;
-  data.name.fullName = `${family} ${styleName}`;
+  data.name.fontSubFamily = installedStyleName;
+  data.name.fullName = `${family} ${installedStyleName}`;
   data.name.postScriptName = postScriptName || `MorphusFont-${sha256(Buffer.from(family + styleName)).slice(0, 8)}`;
   data.name.uniqueSubFamily = `Morphus;${data.name.postScriptName}`;
+  return installedStyleName;
+}
+
+function getInstalledStyleName(existingStyleName, requestedStyleName) {
+  const existing = String(existingStyleName || '').trim();
+  if (existing && normalizeStyleIdentity(existing) === normalizeStyleIdentity(requestedStyleName)) {
+    return existing;
+  }
+
+  return requestedStyleName;
+}
+
+function normalizeStyleIdentity(value) {
+  return String(value || '').replace(/[\s_-]+/g, '').toLowerCase();
 }
 
 function ensureWoff2Ready() {
@@ -512,7 +603,8 @@ function registerWindowsFont(fontPath, task, extension) {
     '$fontKey = "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";',
     'New-Item -Path $fontKey -Force | Out-Null;',
     `New-ItemProperty -Path $fontKey -Name ${quotePowerShell(valueName)} -Value ${quotePowerShell(fontPath)} -PropertyType String -Force | Out-Null;`,
-    'Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; public static class NativeMethods { [DllImport(`"user32.dll`", SetLastError=true, CharSet=CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult); }";',
+    'Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; public static class NativeMethods { [DllImport(`"gdi32.dll`", SetLastError=true, CharSet=CharSet.Unicode)] public static extern int AddFontResourceEx(string lpszFilename, uint fl, IntPtr pdv); [DllImport(`"user32.dll`", SetLastError=true, CharSet=CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult); }";',
+    `[NativeMethods]::AddFontResourceEx(${quotePowerShell(fontPath)}, 0, [IntPtr]::Zero) | Out-Null;`,
     '$result = [UIntPtr]::Zero;',
     '[NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001D, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 1000, [ref]$result) | Out-Null;',
   ].join(' ');
@@ -528,7 +620,36 @@ function registerWindowsFont(fontPath, task, extension) {
   }
 }
 
+export function resolveDownloadedFontFormat(buffer, { url = '', contentType = '', declaredFormat = '' } = {}) {
+  const magicFormat = detectFontMagicFormat(buffer);
+  if (magicFormat) {
+    return magicFormat;
+  }
+
+  const contentTypeFormat = detectFontContentTypeFormat(contentType);
+  if (contentTypeFormat) {
+    return contentTypeFormat;
+  }
+
+  if (buffer && buffer.length >= 4) {
+    return '';
+  }
+
+  const normalizedDeclared = normalizeFontFormat(declaredFormat);
+  if (normalizedDeclared) {
+    return normalizedDeclared;
+  }
+
+  return getUrlExtension(url);
+}
+
 function detectFontFormat(buffer, url, contentType) {
+  return detectFontMagicFormat(buffer)
+    || detectFontContentTypeFormat(contentType)
+    || getUrlExtension(url);
+}
+
+function detectFontMagicFormat(buffer) {
   if (buffer && buffer.length >= 4) {
     const signature = buffer.subarray(0, 4).toString('latin1');
     if (signature === 'wOF2') return 'woff2';
@@ -537,12 +658,27 @@ function detectFontFormat(buffer, url, contentType) {
     if (signature === '\x00\x01\x00\x00' || signature === 'true') return 'ttf';
   }
 
+  return '';
+}
+
+function getFontSignature(buffer) {
+  if (!buffer || buffer.length === 0) {
+    return '';
+  }
+
+  const prefix = buffer.subarray(0, Math.min(buffer.length, 12));
+  const ascii = prefix.toString('latin1').replace(/[^\x20-\x7e]/g, '.');
+  const hex = prefix.toString('hex');
+  return `${ascii} / ${hex}`;
+}
+
+function detectFontContentTypeFormat(contentType) {
   if (/woff2/i.test(contentType)) return 'woff2';
   if (/woff/i.test(contentType)) return 'woff';
   if (/opentype|otf/i.test(contentType)) return 'otf';
   if (/truetype|ttf/i.test(contentType)) return 'ttf';
 
-  return getUrlExtension(url);
+  return '';
 }
 
 function getUrlExtension(url) {

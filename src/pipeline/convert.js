@@ -49,6 +49,7 @@ async function convertWithExtractor({ extractor, source, viewport, baseUrl = nul
 
   progress(onProgress, 74, 'Installing web fonts...');
   const fontInstallation = await installWebFontsForDom(domTree, webFonts);
+  reportFontInstallation(fontInstallation);
   progress(onProgress, 78, 'Resolving fonts...');
   const fontMap = await resolveFonts(domTree);
   progress(onProgress, 86, 'Building Figma tree...');
@@ -96,6 +97,35 @@ function getFontInstallMeta(summary) {
       })),
     },
   };
+}
+
+function reportFontInstallation(summary) {
+  if (!summary || !summary.enabled) {
+    return;
+  }
+
+  const installedCount = (summary.installed || []).length;
+  const reusedCount = (summary.reused || []).length;
+  const skippedCount = (summary.skipped || []).length;
+  const errorCount = (summary.errors || []).length;
+  if (installedCount === 0 && reusedCount === 0 && skippedCount === 0 && errorCount === 0) {
+    console.log('[Morphus] web fonts: no installable @font-face matches were used by the page.');
+    return;
+  }
+
+  console.log(`[Morphus] web fonts: installed ${installedCount}, reused ${reusedCount}, skipped ${skippedCount}, errors ${errorCount}.`);
+  for (const font of [...(summary.installed || []), ...(summary.reused || [])]) {
+    const fallback = font.rawFallback ? ' using raw font fallback' : '';
+    console.log(`[Morphus] web font ready: ${font.family || 'Unknown'} ${font.style || ''} (${font.format || 'unknown'})${fallback}`);
+  }
+  for (const error of summary.errors || []) {
+    const details = [
+      error.format ? `format=${error.format}` : '',
+      error.signature ? `signature=${error.signature}` : '',
+      error.sourceUrl ? `url=${error.sourceUrl}` : '',
+    ].filter(Boolean).join(', ');
+    console.warn(`[Morphus] web font install failed: ${error.family || 'Unknown'} ${error.style || ''}: ${error.message}${details ? ` (${details})` : ''}`);
+  }
 }
 
 function normalizeDocumentTitle(title) {
