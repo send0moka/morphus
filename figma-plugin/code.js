@@ -8,6 +8,8 @@ const DEFAULT_CONVERTER_URL = LOCAL_CONVERTER_URL;
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 const HEARTBEAT_INTERVAL_MS = 5000;
 const CONVERTER_UNAVAILABLE_MESSAGE = `Morphus Converter is not running. Open Morphus Converter from your computer. If the status page is already open, click Run Converter at ${LOCAL_CONVERTER_URL}.`;
+const WEB_FONT_BUILD_RETRY_LIMIT = 2;
+const WEB_FONT_BUILD_RETRY_DELAY_MS = 3000;
 
 figma.showUI(__html__, { width: 420, height: 505 });
 startLocalHeartbeat();
@@ -17,7 +19,7 @@ const DEFAULT_VIEWPORT = { name: 'desktop', label: 'Desktop', width: 1440, heigh
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'BUILD') {
-      await buildFromSnapshot(msg.data);
+      await buildFromSnapshotWithWebFontRetry(msg.data, { deferWebFontRetry: true });
       return;
     }
 
@@ -35,11 +37,15 @@ figma.ui.onmessage = async (msg) => {
       await convertAndBuild(msg.payload);
     }
   } catch (err) {
-    const message = formatErrorForDisplay(err);
-    figma.ui.postMessage({ type: isConverterUnavailableError(err) ? 'CONVERTER_UNAVAILABLE' : 'ERROR', message });
-    console.error('[Morphus]', message, err && err.stack ? err.stack : err);
+    handlePluginError(err);
   }
 };
+
+function handlePluginError(err) {
+  const message = formatErrorForDisplay(err);
+  figma.ui.postMessage({ type: isConverterUnavailableError(err) ? 'CONVERTER_UNAVAILABLE' : 'ERROR', message });
+  console.error('[Morphus]', message, err && err.stack ? err.stack : err);
+}
 
 function formatErrorForDisplay(err) {
   if (!err) {
@@ -72,7 +78,10 @@ async function convertAndBuild(payload) {
 
   progress('Uploading HTML to converter...', 2);
   const result = await convertViewport(serverUrl, payload, viewports[0], null);
-  await buildFromSnapshot(withClientSnapshotMeta(result, payload));
+  await buildFromSnapshotWithWebFontRetry(
+    withClientSnapshotMeta(result, payload),
+    { deferWebFontRetry: true }
+  );
 }
 
 async function convertAndBuildViewports(serverUrl, payload, viewports) {
@@ -90,7 +99,7 @@ async function convertAndBuildViewports(serverUrl, payload, viewports) {
 
     scopedProgress('Uploading HTML to converter...', 2);
     const result = await convertViewport(serverUrl, payload, viewport, scopedProgress);
-    const stats = await buildFromSnapshot(
+    const stats = await buildFromSnapshotWithWebFontRetry(
       withClientSnapshotMeta(result, Object.assign({}, payload, {
         viewport,
         viewportLabel: viewport.label,
@@ -116,6 +125,41 @@ async function convertAndBuildViewports(serverUrl, payload, viewports) {
     variants: viewports.length,
   });
   figma.notify(`Morphus: ${viewports.length} viewports, ${nodeCount} nodes built`);
+}
+
+async function buildFromSnapshotWithWebFontRetry(data, options = {}, state = {}) {
+  try {
+    return await buildFromSnapshot(data, options);
+  } catch (err) {
+    if (!isWebFontsNotReadyError(err)) {
+      throw err;
+    }
+
+    const attempt = Number(state.attempt || 0) + 1;
+    const retryLimit = getWebFontBuildRetryLimit(options);
+    if (attempt > retryLimit) {
+      throw err;
+    }
+
+    reportProgress(
+      options,
+      `Figma is refreshing local fonts. Retrying build ${attempt}/${retryLimit}...`,
+      92
+    );
+
+    const retryOptions = Object.assign({}, options);
+
+    if (options && options.deferWebFontRetry) {
+      setTimeout(() => {
+        buildFromSnapshotWithWebFontRetry(data, retryOptions, { attempt })
+          .catch(handlePluginError);
+      }, getWebFontBuildRetryDelayMs(options));
+      return null;
+    }
+
+    await sleep(getWebFontBuildRetryDelayMs(options));
+    return buildFromSnapshotWithWebFontRetry(data, retryOptions, { attempt });
+  }
 }
 
 async function convertViewport(serverUrl, payload, viewport, onProgress) {
@@ -292,7 +336,8 @@ async function buildFromSnapshot(data, options = {}) {
 
   const webFontMeta = data.meta && data.meta.webFonts;
   reportProgress(options, hasWebFontsForPreload(webFontMeta) ? 'Waiting for web fonts...' : 'Pre-loading fonts...', 91);
-  const fontSummary = await preloadFonts(figmaTree, webFontMeta);
+  const fontSummary = await preloadFonts(figmaTree, webFontMeta, options);
+  throwIfWebFontsAreNotReady(fontSummary);
   reportFontFallbacks(fontSummary, options, webFontMeta);
 
   reportProgress(options, 'Creating local styles...', 94);
@@ -418,10 +463,10 @@ function isValidCodePoint(number) {
 // Font pre-loading
 
 const loadedFontPromises = {};
-const WEB_FONT_READY_TIMEOUT_MS = 8000;
-const WEB_FONT_READY_POLL_MS = 250;
+const WEB_FONT_READY_TIMEOUT_MS = 45000;
+const WEB_FONT_READY_POLL_MS = 500;
 
-async function preloadFonts(nodes, webFontMeta) {
+async function preloadFonts(nodes, webFontMeta, options = {}) {
   const fallback = { family: 'Inter', style: 'Regular' };
   const requestsByKey = {};
   const resolvedByKey = {};
@@ -435,7 +480,7 @@ async function preloadFonts(nodes, webFontMeta) {
 
   const keys = Object.keys(requestsByKey);
   let availableByFamily = await listAvailableFontsByFamily();
-  availableByFamily = await waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, availableByFamily);
+  availableByFamily = await waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, availableByFamily, options);
 
   await Promise.all(keys.map((key) => {
     const requested = requestsByKey[key];
@@ -448,10 +493,6 @@ async function preloadFonts(nodes, webFontMeta) {
       });
   }));
 
-  for (let index = 0; index < (nodes || []).length; index++) {
-    applyPreloadedFonts(nodes[index], resolvedByKey, fallback);
-  }
-
   for (let index = 0; index < keys.length; index++) {
     const requested = requestsByKey[keys[index]];
     const resolved = resolvedByKey[keys[index]] || fallback;
@@ -463,23 +504,34 @@ async function preloadFonts(nodes, webFontMeta) {
     }
   }
 
-  return { fallbacks: fallbackReports };
+  const unavailableWebFonts = getUnavailableWebFontFallbacks(fallbackReports, webFontMeta);
+  if (!unavailableWebFonts.length) {
+    for (let index = 0; index < (nodes || []).length; index++) {
+      applyPreloadedFonts(nodes[index], resolvedByKey, fallback);
+    }
+  }
+
+  return {
+    fallbacks: fallbackReports,
+    unavailableWebFonts,
+  };
 }
 
 function hasWebFontsForPreload(webFontMeta) {
   return getInstalledWebFonts(webFontMeta).length > 0;
 }
 
-async function waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, initialAvailableByFamily) {
+async function waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, initialAvailableByFamily, options = {}) {
   const webFontRequests = getWebFontRequests(requestsByKey, webFontMeta);
   if (!webFontRequests.length) {
     return initialAvailableByFamily;
   }
 
   const startedAt = Date.now();
+  const timeoutMs = getWebFontReadyTimeoutMs(options);
   let availableByFamily = initialAvailableByFamily || {};
 
-  while (Date.now() - startedAt <= WEB_FONT_READY_TIMEOUT_MS) {
+  while (Date.now() - startedAt <= timeoutMs) {
     const missing = [];
     for (let index = 0; index < webFontRequests.length; index++) {
       if (!await isWebFontRequestReady(webFontRequests[index], availableByFamily)) {
@@ -554,6 +606,78 @@ async function isWebFontRequestReady(requested, availableByFamily) {
   }
 
   return false;
+}
+
+function getUnavailableWebFontFallbacks(fallbackReports, webFontMeta) {
+  const installedFonts = getInstalledWebFonts(webFontMeta);
+  if (!installedFonts.length) {
+    return [];
+  }
+
+  const installedFamilies = {};
+  for (let index = 0; index < installedFonts.length; index++) {
+    const installed = normalizeFontName(installedFonts[index]);
+    if (installed) {
+      installedFamilies[normalizeFontFamilyKey(installed.family)] = true;
+    }
+  }
+
+  const unavailable = [];
+  const seen = {};
+  for (let index = 0; index < (fallbackReports || []).length; index++) {
+    const requested = normalizeFontName(fallbackReports[index].requested);
+    if (!requested || !installedFamilies[normalizeFontFamilyKey(requested.family)]) {
+      continue;
+    }
+
+    const key = getFontCacheKey(requested);
+    if (!seen[key]) {
+      seen[key] = true;
+      unavailable.push(requested);
+    }
+  }
+
+  return unavailable;
+}
+
+function throwIfWebFontsAreNotReady(fontSummary) {
+  const unavailable = fontSummary && Array.isArray(fontSummary.unavailableWebFonts)
+    ? fontSummary.unavailableWebFonts
+    : [];
+  if (!unavailable.length) {
+    return;
+  }
+
+  const shown = unavailable.slice(0, 4).map(formatFontName).join(', ');
+  const extra = unavailable.length > 4 ? ` +${unavailable.length - 4} more` : '';
+  const error = new Error(`Morphus installed web fonts, but Figma has not refreshed them yet after waiting: ${shown}${extra}. Reload or restart Figma, then run Convert and Build again. No fallback frame was created.`);
+  error.morphusCode = 'WEB_FONTS_NOT_READY';
+  throw error;
+}
+
+function isWebFontsNotReadyError(err) {
+  return Boolean(err && err.morphusCode === 'WEB_FONTS_NOT_READY');
+}
+
+function getWebFontReadyTimeoutMs(options) {
+  if (options && typeof options.webFontReadyTimeoutMs === 'number') {
+    return Math.max(0, options.webFontReadyTimeoutMs);
+  }
+  return WEB_FONT_READY_TIMEOUT_MS;
+}
+
+function getWebFontBuildRetryLimit(options) {
+  if (options && typeof options.webFontBuildRetryLimit === 'number') {
+    return Math.max(0, Math.floor(options.webFontBuildRetryLimit));
+  }
+  return WEB_FONT_BUILD_RETRY_LIMIT;
+}
+
+function getWebFontBuildRetryDelayMs(options) {
+  if (options && typeof options.webFontBuildRetryDelayMs === 'number') {
+    return Math.max(0, options.webFontBuildRetryDelayMs);
+  }
+  return WEB_FONT_BUILD_RETRY_DELAY_MS;
 }
 
 function reportFontFallbacks(fontSummary, options, webFontMeta) {
@@ -2135,8 +2259,8 @@ async function buildTextNode(spec, parentLayoutMode, styleRegistry) {
 
   const text = figma.createText();
   applyBaseTextProps(text, spec);
-  applyTextRunStyles(text, textRuns);
   await applyTextStyleIds(text, spec, textRuns, styleRegistry);
+  applyTextRunStyles(text, textRuns);
   applyTextDecorations(text, spec, textRuns);
   applyTextSizing(text, spec, parentLayoutMode);
   applyChildLayoutSizing(text, spec);
@@ -2183,8 +2307,8 @@ async function buildMixedTextGroup(spec, styleRegistry) {
     return run;
   });
 
-  applyTextRunStyles(baseText, baseTextRuns);
   await applyTextStyleIds(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }), baseTextRuns, styleRegistry);
+  applyTextRunStyles(baseText, baseTextRuns);
   applyTextDecorations(baseText, spec, baseTextRuns);
   applyTextSizing(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }));
   frame.appendChild(baseText);
@@ -2373,7 +2497,8 @@ function applyTextSizing(text, spec, parentLayoutMode) {
     }
 
     if (hasExplicitLineBreaks(spec.characters)) {
-      if (shouldPreserveTextWidthForAlignment(spec, parentLayoutMode)) {
+      if (shouldPreserveTextWidthForAlignment(spec, parentLayoutMode)
+        || hasSoftWrappedExplicitMultilineText(spec)) {
         text.textAutoResize = 'HEIGHT';
         text.resize(Math.max(spec.width, 1), Math.max(spec.height || 1, 1));
         return;
@@ -2414,6 +2539,26 @@ function applyTextTruncation(text, spec) {
 
 function hasExplicitLineBreaks(characters) {
   return String(characters || '').includes('\n');
+}
+
+function hasSoftWrappedExplicitMultilineText(spec) {
+  const explicitLineCount = getExplicitTextLineCount(spec.characters);
+  if (explicitLineCount <= 1) {
+    return false;
+  }
+
+  const height = pickNumber(spec.height, 0);
+  const lineHeight = getLineHeightPx(spec.lineHeight, spec.fontSize || 16);
+  if (height <= 0 || lineHeight <= 0) {
+    return false;
+  }
+
+  const renderedLineCount = Math.max(1, Math.round(height / lineHeight));
+  return renderedLineCount > explicitLineCount;
+}
+
+function getExplicitTextLineCount(characters) {
+  return String(characters || '').split('\n').length;
 }
 
 function shouldPreserveTextWidthForAlignment(spec, parentLayoutMode) {
@@ -2875,9 +3020,19 @@ function determineAutoLayoutSizing(spec) {
   }
 
   return {
-    primaryFixed: shouldFixAxis(spec, children, 'primary'),
-    counterFixed: shouldFixAxis(spec, children, 'counter'),
+    primaryFixed: hasFillChildOnAxis(spec, children, 'primary') || shouldFixAxis(spec, children, 'primary'),
+    counterFixed: hasFillChildOnAxis(spec, children, 'counter') || shouldFixAxis(spec, children, 'counter'),
   };
+}
+
+function hasFillChildOnAxis(spec, children, axisRole) {
+  const layoutMode = spec.layoutMode;
+  const axis = axisRole === 'primary'
+    ? layoutMode === 'HORIZONTAL' ? 'HORIZONTAL' : 'VERTICAL'
+    : layoutMode === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL';
+  const sizingProp = axis === 'HORIZONTAL' ? 'layoutSizingHorizontal' : 'layoutSizingVertical';
+
+  return (children || []).some((child) => child && child[sizingProp] === 'FILL');
 }
 
 function shouldFixAxis(spec, children, axisRole) {

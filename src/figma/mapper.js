@@ -145,7 +145,12 @@ function buildNode(node, parentContext, ctx, path) {
   }
 
   if (base.type === 'TEXT') {
-    const typography = mapTypography(computed, ctx.fontMap, parentContext?.sourceNode?.computed);
+    const mappedTextRuns = buildTextRuns(textRuns, ctx.fontMap);
+    const typography = resolveBaseTypographyFromRuns(
+      mapTypography(computed, ctx.fontMap, parentContext?.sourceNode?.computed),
+      text,
+      mappedTextRuns
+    );
     if (inheritedTextTruncationContext && !typography.textTruncation) {
       typography.textTruncation = 'ENDING';
     }
@@ -156,7 +161,7 @@ function buildNode(node, parentContext, ctx, path) {
       ...typography,
       ...mapFlexTextAlignment(computed),
       ...mapTextStroke(computed),
-      textRuns: buildTextRuns(textRuns, ctx.fontMap),
+      textRuns: mappedTextRuns,
       opacity: roundFloat(parseFloat(computed.opacity ?? 1)),
     };
 
@@ -970,7 +975,12 @@ function buildEmbeddedTextNode(node, ctx, path, resolvedRect = null, nameSuffix 
   const textRect = textTruncationContext
     ? clampRectToTextTruncationContext(initialTextRect, textTruncationContext)
     : initialTextRect;
-  const typography = mapTypography(computed, ctx.fontMap, node.computed);
+  const mappedTextRuns = buildTextRuns(textRuns, ctx.fontMap);
+  const typography = resolveBaseTypographyFromRuns(
+    mapTypography(computed, ctx.fontMap, node.computed),
+    text,
+    mappedTextRuns
+  );
   if (textTruncationContext && !typography.textTruncation) {
     typography.textTruncation = 'ENDING';
   }
@@ -987,7 +997,7 @@ function buildEmbeddedTextNode(node, ctx, path, resolvedRect = null, nameSuffix 
     ...typography,
     ...mapFlexTextAlignment(computed),
     ...mapTextStroke(computed),
-    textRuns: buildTextRuns(textRuns, ctx.fontMap),
+    textRuns: mappedTextRuns,
   };
 }
 
@@ -1657,7 +1667,12 @@ function withFlexSizing(node, flowChildren, layout) {
   const counterAlign = String(result.counterAxisAlignItems || 'MIN').toUpperCase();
   const wraps = result.layoutWrap === 'WRAP';
 
-  if (wraps || primaryFreeSpace > 2 || primaryAlign === 'CENTER' || primaryAlign === 'MAX' || primaryAlign === 'SPACE_BETWEEN') {
+  if (hasMainAxisFillChild(node, flowChildren, axis)
+    || wraps
+    || primaryFreeSpace > 2
+    || primaryAlign === 'CENTER'
+    || primaryAlign === 'MAX'
+    || primaryAlign === 'SPACE_BETWEEN') {
     result.primaryAxisSizingMode = 'FIXED';
   }
 
@@ -1974,6 +1989,63 @@ function buildTextRuns(runs, fontMap) {
       ...mapTypography(run.computed, fontMap),
       ...mapTextStroke(run.computed),
     }));
+}
+
+function resolveBaseTypographyFromRuns(baseTypography, text, mappedTextRuns) {
+  const fullRun = getSingleFullTextRun(text, mappedTextRuns);
+  if (!fullRun) {
+    return baseTypography;
+  }
+
+  const result = { ...baseTypography };
+  const keys = [
+    'fontName',
+    'fontSize',
+    'lineHeight',
+    'letterSpacing',
+    'textAlignHorizontal',
+    'textAlignVertical',
+    'textCase',
+    'fills',
+    'strokes',
+    'strokeWeight',
+    'effects',
+    'textDecoration',
+    'textDecorationStyle',
+    'textDecorationColor',
+    'textDecorationThickness',
+  ];
+
+  for (const key of keys) {
+    if (fullRun[key] !== undefined) {
+      result[key] = fullRun[key];
+    }
+  }
+
+  return result;
+}
+
+function hasMainAxisFillChild(parentNode, children, axis) {
+  return (children || []).some((child) => {
+    const flexGrow = parseFloat(child?.computed?.flexGrow);
+    return Number.isFinite(flexGrow)
+      && flexGrow > 0
+      && !shouldHugSingleTextFlexChild(parentNode, child, axis);
+  });
+}
+
+function getSingleFullTextRun(text, mappedTextRuns) {
+  if (!Array.isArray(mappedTextRuns) || mappedTextRuns.length !== 1) {
+    return null;
+  }
+
+  const textKey = normalizeTextRunContent(text);
+  const runKey = normalizeTextRunContent(mappedTextRuns[0].text);
+  return textKey && textKey === runKey ? mappedTextRuns[0] : null;
+}
+
+function normalizeTextRunContent(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 function mapFlexTextAlignment(computed) {

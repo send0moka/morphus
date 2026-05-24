@@ -135,13 +135,18 @@ export async function installWebFontsForDom(domTree, webFonts, options = {}) {
         writeFileSync(fontPath, prepared.buffer);
       }
 
+      const installedStyleName = prepared.styleName || task.styleName;
+
       if (target.platform === 'windows' && process.env.MORPHUS_SKIP_FONT_REGISTRATION !== '1') {
-        registerWindowsFont(fontPath, task, prepared.extension);
+        registerWindowsFont(fontPath, {
+          family: task.family,
+          styleName: installedStyleName,
+        }, prepared.extension);
       }
 
       const entry = {
         family: task.family,
-        style: prepared.styleName || task.styleName,
+        style: installedStyleName,
         sourceUrl: source.url,
         format: prepared.format,
         rawFallback: prepared.rawFallback || false,
@@ -600,11 +605,15 @@ function registerWindowsFont(fontPath, task, extension) {
   const valueName = `${task.family} ${task.styleName} (${registryKind})`;
   const command = [
     '$ErrorActionPreference = "Stop";',
+    `$fontPath = ${quotePowerShell(fontPath)};`,
+    `$valueName = ${quotePowerShell(valueName)};`,
     '$fontKey = "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";',
-    'New-Item -Path $fontKey -Force | Out-Null;',
-    `New-ItemProperty -Path $fontKey -Name ${quotePowerShell(valueName)} -Value ${quotePowerShell(fontPath)} -PropertyType String -Force | Out-Null;`,
+    'if (-not (Test-Path -Path $fontKey)) { New-Item -Path $fontKey | Out-Null; }',
+    'New-ItemProperty -Path $fontKey -Name $valueName -Value $fontPath -PropertyType String -Force | Out-Null;',
+    '$registeredPath = Get-ItemPropertyValue -Path $fontKey -Name $valueName;',
+    'if ($registeredPath -ne $fontPath) { throw "Windows font registry verification failed."; }',
     'Add-Type -TypeDefinition "using System; using System.Runtime.InteropServices; public static class NativeMethods { [DllImport(`"gdi32.dll`", SetLastError=true, CharSet=CharSet.Unicode)] public static extern int AddFontResourceEx(string lpszFilename, uint fl, IntPtr pdv); [DllImport(`"user32.dll`", SetLastError=true, CharSet=CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult); }";',
-    `[NativeMethods]::AddFontResourceEx(${quotePowerShell(fontPath)}, 0, [IntPtr]::Zero) | Out-Null;`,
+    '[NativeMethods]::AddFontResourceEx($fontPath, 0, [IntPtr]::Zero) | Out-Null;',
     '$result = [UIntPtr]::Zero;',
     '[NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001D, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 1000, [ref]$result) | Out-Null;',
   ].join(' ');

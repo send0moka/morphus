@@ -7880,6 +7880,7 @@
                   "primaryAxisAlignItems": "MIN",
                   "counterAxisAlignItems": "MIN",
                   "itemSpacing": 0,
+                  "primaryAxisSizingMode": "FIXED",
                   "children": [
                     {
                       "id": "input-cta-input-0-6-1-1-0",

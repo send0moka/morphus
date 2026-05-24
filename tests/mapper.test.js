@@ -306,6 +306,55 @@ test('marks flex children that fill the parent counter axis as fill sizing', () 
   expect(builtHeader.counterAxisSizingMode).toBe('FIXED');
 });
 
+test('fixes a flex row primary axis when a child fills remaining space', () => {
+  const row = frameNode({
+    tag: 'div',
+    classList: ['spec-row'],
+    rect: { x: 0, y: 0, width: 1220, height: 110 },
+    computed: {
+      display: 'flex',
+      alignItems: 'baseline',
+      gap: '32px',
+      columnGap: '32px',
+      paddingTop: '28.8px',
+      paddingRight: '40px',
+      paddingBottom: '28.8px',
+      paddingLeft: '40px',
+      backgroundColor: 'rgb(10, 10, 15)',
+    },
+    children: [
+      frameNode({
+        tag: 'div',
+        classList: ['spec-meta'],
+        rect: { x: 40, y: 37, width: 170, height: 36 },
+      }),
+      textContainerNode({
+        tag: 'div',
+        classList: ['spec-sample'],
+        text: 'Desain Tanpa Batas',
+        rect: { x: 242, y: 37, width: 938, height: 36 },
+        computed: {
+          flexGrow: '1',
+          overflow: 'hidden',
+        },
+      }),
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 1220, height: 110 },
+    children: [row],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtRow = tree.children[0];
+
+  expect(builtRow.layoutMode).toBe('HORIZONTAL');
+  expect(builtRow.width).toBe(1220);
+  expect(builtRow.primaryAxisSizingMode).toBe('FIXED');
+  expect(builtRow.children[1].layoutSizingHorizontal).toBe('FILL');
+});
+
 test('represents flex auto margins as grouped space-between layout without class-specific positioning', () => {
   const header = frameNode({
     tag: 'header',
@@ -1119,6 +1168,53 @@ test('maps inline text decoration runs to Figma text decoration properties', () 
       },
     },
   }));
+});
+
+test('uses a single full inline run as the base text typography', () => {
+  const sample = textContainerNode({
+    tag: 'div',
+    classList: ['spec-sample'],
+    text: 'Font Yang Berbeda',
+    rect: { x: 0, y: 0, width: 500, height: 40 },
+    computed: {
+      color: 'rgb(232, 232, 240)',
+      fontFamily: 'Satoshi',
+      fontSize: '16px',
+      fontWeight: '400',
+      lineHeight: '25.6px',
+    },
+    textRuns: [
+      {
+        text: 'Font Yang Berbeda',
+        computed: baseComputed({
+          color: 'rgb(255, 255, 255)',
+          fontFamily: 'Clash Display',
+          fontSize: '35.2px',
+          fontWeight: '700',
+          lineHeight: '35.2px',
+          letterSpacing: '-0.704px',
+        }),
+      },
+    ],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 600, height: 120 },
+    children: [sample],
+  });
+  const fontMap = {
+    'Satoshi|400|normal': { family: 'Satoshi', style: 'Regular' },
+    'Clash Display|700|normal': { family: 'Clash Display', style: 'Bold' },
+  };
+
+  const [tree] = buildFigmaTree({ annotated: body }, { fontMap });
+  const text = tree.children[0];
+
+  expect(text.fontName).toEqual({ family: 'Clash Display', style: 'Bold' });
+  expect(text.fontSize).toBe(35.2);
+  expect(text.lineHeight).toEqual({ value: 35.2, unit: 'PIXELS' });
+  expect(text.letterSpacing).toEqual({ value: -0.704, unit: 'PIXELS' });
+  expect(text.textRuns[0].fontName).toEqual({ family: 'Clash Display', style: 'Bold' });
 });
 
 test('maps CSS text glow from text-shadow and drop-shadow filter', () => {

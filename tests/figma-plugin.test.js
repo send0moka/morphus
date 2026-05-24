@@ -287,6 +287,54 @@ test('fixes only the auto-layout axis that needs rendered free space', async () 
   expect(builtNavLinks.layoutSizingHorizontal).toBeUndefined();
 });
 
+test('keeps auto-layout rows with fill children at the rendered width', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      frameSpec('div.spec-row', {
+        width: 1220,
+        height: 110,
+        paddingTop: 29,
+        paddingRight: 40,
+        paddingBottom: 29,
+        paddingLeft: 40,
+        layoutMode: 'HORIZONTAL',
+        primaryAxisAlignItems: 'MIN',
+        counterAxisAlignItems: 'BASELINE',
+        itemSpacing: 32,
+        children: [
+          frameSpec('div.spec-meta', { width: 170, height: 36 }),
+          textSpec('div.spec-sample', {
+            width: 938,
+            height: 36,
+            characters: 'Desain Tanpa Batas',
+            layoutSizingHorizontal: 'FILL',
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const row = page.children[0];
+
+  expect(row.width).toBe(1220);
+  expect(row.primaryAxisSizingMode).toBe('FIXED');
+  expect(row.layoutSizingHorizontal).toBe('FIXED');
+  expect(row.children[1].layoutSizingHorizontal).toBe('FILL');
+});
+
 test('uses width-and-height auto resize for explicit multiline text', async () => {
   const { figma, page } = createFigmaMock();
   const context = {
@@ -321,6 +369,39 @@ test('uses width-and-height auto resize for explicit multiline text', async () =
   const title = page.children[0];
   expect(title.textAutoResize).toBe('WIDTH_AND_HEIGHT');
   expect(title.width).toBe(0);
+});
+
+test('preserves rendered width when explicit multiline text also soft-wraps', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('div.alpha-display', {
+        width: 1220,
+        height: 249,
+        characters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789 !@#&?()[]{}.,;:-',
+        fontName: { family: 'Bebas Neue', style: 'Regular' },
+        fontSize: 79.2,
+        lineHeight: { value: 83.16, unit: 'PIXELS' },
+      }),
+    ],
+  });
+
+  const display = page.children[0];
+  expect(display.textAutoResize).toBe('HEIGHT');
+  expect(display.width).toBe(1220);
+  expect(display.height).toBe(249);
 });
 
 test('preserves centered multiline text box width outside auto layout', async () => {
@@ -483,6 +564,108 @@ test('waits for installed web fonts to become available before building text', a
   const label = page.children[0];
   expect(availabilityChecks).toBeGreaterThanOrEqual(5);
   expect(label.fontName).toEqual({ family: 'Neulis Neue', style: 'Semi Bold' });
+});
+
+test('does not build fallback nodes when newly installed web fonts are still unavailable', async () => {
+  const { figma, page } = createFigmaMock({
+    availableFonts: [
+      { family: 'Inter', style: 'Regular' },
+    ],
+  });
+  const context = {
+    figma,
+    __html__: '',
+    console: { ...console, warn() {} },
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await expect(context.buildFromSnapshot({
+    meta: {
+      webFonts: {
+        installed: [
+          { family: 'Neulis Neue', style: 'SemiBold' },
+        ],
+        errors: [],
+      },
+    },
+    figmaTree: [
+      textSpec('span.announcement', {
+        width: 120,
+        height: 16,
+        characters: 'Ikuti Program',
+        fontName: { family: 'Neulis Neue', style: 'SemiBold' },
+      }),
+    ],
+  }, { webFontReadyTimeoutMs: 0 })).rejects.toThrow(/Figma has not refreshed/);
+
+  expect(page.children).toHaveLength(0);
+});
+
+test('automatically retries a deferred build after Figma refreshes local fonts', async () => {
+  let refreshed = false;
+  const { figma, page, uiMessages } = createFigmaMock({
+    availableFonts: () => refreshed
+      ? [
+          { family: 'Inter', style: 'Regular' },
+          { family: 'Neulis Neue', style: 'Semi Bold' },
+        ]
+      : [
+          { family: 'Inter', style: 'Regular' },
+        ],
+  });
+  const context = {
+    figma,
+    __html__: '',
+    console: { ...console, warn() {} },
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  const snapshot = {
+    meta: {
+      webFonts: {
+        installed: [
+          { family: 'Neulis Neue', style: 'SemiBold' },
+        ],
+        errors: [],
+      },
+    },
+    figmaTree: [
+      textSpec('span.announcement', {
+        width: 120,
+        height: 16,
+        characters: 'Ikuti Program',
+        fontName: { family: 'Neulis Neue', style: 'SemiBold' },
+      }),
+    ],
+  };
+
+  const firstAttempt = await context.buildFromSnapshotWithWebFontRetry(snapshot, {
+    deferWebFontRetry: true,
+    webFontReadyTimeoutMs: 0,
+    webFontBuildRetryDelayMs: 0,
+    webFontBuildRetryLimit: 2,
+  });
+
+  expect(firstAttempt).toBeNull();
+  expect(page.children).toHaveLength(0);
+  refreshed = true;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  expect(page.children).toHaveLength(1);
+  expect(page.children[0].fontName).toEqual({ family: 'Neulis Neue', style: 'Semi Bold' });
+  expect(uiMessages.some((message) => (
+    message.type === 'PROGRESS' && /Retrying build/.test(message.text)
+  ))).toBe(true);
 });
 
 test('notifies when a requested font falls back to Inter', async () => {
