@@ -1113,6 +1113,35 @@ test('creates local styles only for reusable values and prunes stale generated s
   expect(generatedTextStyles[0].fontSize).toBe(16);
 });
 
+test('keeps semantic PDF text roles as local text styles even when one-off', async () => {
+  const { figma, textStyles } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('pdf heading', {
+        characters: '1. Kualitas Analisis Atribut Utility Tertinggi',
+        fontName: { family: 'Inter', style: 'Bold' },
+        fontSize: 24,
+        _textRole: 'Heading 1',
+      }),
+    ],
+  });
+
+  const activeTextNames = textStyles.filter((style) => !style.removed).map((style) => style.name);
+  expect(activeTextNames.some((name) => name.startsWith('Morphus / Typography / Heading 1 / 24px / Bold'))).toBe(true);
+});
+
 test('uses document title as local style namespace without pruning other imports', async () => {
   const { figma, paintStyles, textStyles } = createFigmaMock();
   paintStyles.push(

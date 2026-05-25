@@ -1228,6 +1228,7 @@ function collectTextDefinition(map, spec, seenKeys = null) {
       lineHeight: style.lineHeight,
       letterSpacing: style.letterSpacing,
       textCase: style.textCase,
+      textRole: style.textRole,
     };
   }
 
@@ -1240,7 +1241,7 @@ function collectTextDefinition(map, spec, seenKeys = null) {
 }
 
 function isReusableLocalStyleDefinition(def) {
-  return Boolean(def && def.count > 1);
+  return Boolean(def && (def.count > 1 || def.textRole));
 }
 
 function pruneGeneratedStyles(localStyles, defs, styleNamespace = DEFAULT_STYLE_NAMESPACE) {
@@ -1369,12 +1370,38 @@ function normalizeTextStyleInput(spec) {
     lineHeight: normalizeLineHeightForStyle(spec.lineHeight),
     letterSpacing: normalizeLetterSpacingForStyle(spec.letterSpacing),
     textCase: spec.textCase || 'ORIGINAL',
+    textRole: normalizeTextRole(spec._textRole || spec.textRole),
   };
+}
+
+function normalizeTextRole(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+    return '';
+  }
+
+  if (/^h([1-6])$/i.test(text)) {
+    return `Heading ${text.match(/^h([1-6])$/i)[1]}`;
+  }
+
+  if (/^heading\s*[1-6]$/i.test(text)) {
+    return text.replace(/^heading\s*([1-6])$/i, 'Heading $1');
+  }
+
+  if (/^(body|paragraph|normal|normal text)$/i.test(text)) {
+    return 'Normal Text';
+  }
+
+  return text
+    .split(' ')
+    .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : '')
+    .join(' ');
 }
 
 function makeTextStyleKey(style) {
   return [
     'text',
+    style.textRole || '',
     style.fontName.family,
     style.fontName.style,
     style.fontSize,
@@ -1455,10 +1482,18 @@ function assignTextStyleNames(defs, styleNamespace = DEFAULT_STYLE_NAMESPACE) {
   for (let index = 0; index < defs.length; index++) {
     const def = defs[index];
     const scale = getTypographyScale(def);
-    const baseName = `${styleNamespace} / Typography / ${scale.role} / ${scale.size} / ${getFontStyleLabel(def.fontName.style)}`;
+    const rolePath = def.textRole
+      ? `${def.textRole} / ${formatStyleSize(def.fontSize)}`
+      : `${scale.role} / ${scale.size}`;
+    const baseName = `${styleNamespace} / Typography / ${rolePath} / ${getFontStyleLabel(def.fontName.style)}`;
     def.name = makeUniqueStyleName(baseName, getTextStyleSuffix(def), used);
     def.description = buildTextStyleDescription(def);
   }
+}
+
+function formatStyleSize(size) {
+  const number = Number(size) || 0;
+  return `${roundStyleNumber(number, 2)}px`;
 }
 
 function makeUniqueStyleName(baseName, suffix, used) {

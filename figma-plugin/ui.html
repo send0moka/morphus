@@ -1610,16 +1610,8 @@
               setStatus(`Memproses halaman ${pageNum} dari ${pagesToConvert.length}...`);
 
               const page = await pdfDoc.getPage(pageNum);
-              const scale = 2.0; // high-res for quality
+              const scale = 1.0;
               const viewport = page.getViewport({ scale });
-
-              // Render page to canvas → PNG
-              const canvas = document.createElement('canvas');
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              const ctx = canvas.getContext('2d');
-              await page.render({ canvasContext: ctx, viewport }).promise;
-              const pngDataUrl = canvas.toDataURL('image/png');
 
               // Extract text content with positions
               const textContent = await page.getTextContent();
@@ -1629,42 +1621,40 @@
                 // PDF transform: [scaleX, skewX, skewY, scaleY, transX, transY]
                 const [, , , scaleY, tx, ty] = item.transform;
                 const fontSize = Math.abs(scaleY) * scale;
+                const style = textContent.styles && item.fontName ? textContent.styles[item.fontName] : null;
+                const ascent = style && Number.isFinite(style.ascent) ? style.ascent : 1;
+                const baselineY = viewport.height - (ty * scale);
                 // PDF origin is bottom-left; HTML is top-left
                 const x = tx * scale;
-                const y = viewport.height - (ty * scale) - fontSize;
+                const y = baselineY - (fontSize * ascent);
                 textItems.push({
                   str: item.str,
-                  x: Math.round(x),
-                  y: Math.round(y),
-                  fontSize: Math.round(fontSize),
+                  x: roundPdfNumber(x),
+                  y: roundPdfNumber(y),
+                  baselineY: roundPdfNumber(baselineY),
+                  fontSize: roundPdfNumber(fontSize),
                   fontName: item.fontName || '',
-                  width: Math.round((item.width || 0) * scale),
+                  fontFamily: style && style.fontFamily ? style.fontFamily : '',
+                  width: roundPdfNumber((item.width || 0) * scale),
+                  height: roundPdfNumber((item.height || fontSize) * scale),
+                  hasEOL: Boolean(item.hasEOL),
                 });
               }
 
-              // Build HTML: image background + transparent text overlay
-              const textSpans = textItems.map(t =>
-                `<span style="position:absolute;left:${t.x}px;top:${t.y}px;font-size:${t.fontSize}px;white-space:pre;color:transparent;pointer-events:none;line-height:1">${t.str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`
-              ).join('');
-
-              const html = `<!doctype html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}</style></head><body style="width:${viewport.width}px;height:${viewport.height}px;position:relative;overflow:hidden"><img src="${pngDataUrl}" style="position:absolute;top:0;left:0;width:${viewport.width}px;height:${viewport.height}px;display:block">${textSpans}</body></html>`;
-
               pdfPages.push({
                 pageNum,
-                html,
                 width: viewport.width,
                 height: viewport.height,
+                textItems,
                 sourceName: `${state.selectedPdfFile.name} — Page ${pageNum}`,
               });
             }
 
+            const snapshot = buildPdfSnapshot(pdfPages, state.selectedPdfFile.name);
             parent.postMessage({
               pluginMessage: {
-                type: 'CONVERT_PDF_AND_BUILD',
-                payload: {
-                  pages: pdfPages,
-                  sourceName: state.selectedPdfFile.name,
-                },
+                type: 'BUILD',
+                data: snapshot,
               },
             }, '*');
           } catch (err) {
@@ -1888,6 +1878,408 @@
       const name = String(file && file.name ? file.name : '').toLowerCase();
       const type = String(file && file.type ? file.type : '').toLowerCase();
       return /\.pdf$/i.test(name) && (!type || type === 'application/pdf' || type === 'application/octet-stream');
+    }
+
+    function buildPdfSnapshot(pdfPages, sourceName) {
+      const pages = Array.isArray(pdfPages) ? pdfPages : [];
+      return {
+        version: '0.1.0',
+        meta: {
+          source: sourceName || 'pdf',
+          title: sourceName || 'PDF import',
+          viewport: pages[0] ? {
+            width: roundPdfNumber(pages[0].width),
+            height: roundPdfNumber(pages[0].height),
+          } : undefined,
+        },
+        warnings: [],
+        figmaTree: pages.map((page, index) => buildPdfPageFrame(page, index)),
+      };
+    }
+
+    function buildPdfPageFrame(page, index) {
+      const lines = groupPdfTextItemsIntoLines(page.textItems || []);
+      const bodyFontSize = estimatePdfBodyFontSize(lines);
+      const blocks = groupPdfLinesIntoBlocks(lines, bodyFontSize);
+      return {
+        id: `pdf-page-${page.pageNum || index + 1}`,
+        name: `Page ${page.pageNum || index + 1} - body`,
+        type: 'FRAME',
+        x: 0,
+        y: 0,
+        width: Math.max(roundPdfNumber(page.width || 1), 1),
+        height: Math.max(roundPdfNumber(page.height || 1), 1),
+        fills: [solidPdfPaint(1, 1, 1)],
+        strokes: [],
+        clipsContent: true,
+        children: blocks.map((block, blockIndex) => buildPdfTextNode(block, page, blockIndex)),
+      };
+    }
+
+    function buildPdfTextNode(block, page, index) {
+      const role = block.role || 'Normal Text';
+      const isHeading = /^Heading\b/.test(role);
+      const fontStyle = block.bold || isHeading ? 'Bold' : 'Regular';
+      const fontSize = Math.max(roundPdfNumber(block.fontSize || 12), 1);
+      const lineHeight = Math.max(roundPdfNumber(block.lineHeight || fontSize * 1.2), fontSize);
+      return {
+        id: `pdf-page-${page.pageNum || 1}-text-${index + 1}`,
+        name: `${role} ${index + 1}`,
+        type: 'TEXT',
+        x: Math.max(roundPdfNumber(block.x || 0), 0),
+        y: Math.max(roundPdfNumber(block.y || 0), 0),
+        width: Math.max(roundPdfNumber(block.width || 1), 1),
+        height: Math.max(roundPdfNumber(block.height || lineHeight), lineHeight),
+        characters: block.text || '',
+        fontName: {
+          family: block.fontFamily || 'Times New Roman',
+          style: fontStyle,
+        },
+        fontSize,
+        lineHeight: { unit: 'PIXELS', value: lineHeight },
+        letterSpacing: { unit: 'PIXELS', value: 0 },
+        textAlignHorizontal: 'LEFT',
+        textAlignVertical: 'TOP',
+        fills: [solidPdfPaint(0, 0, 0)],
+        opacity: 1,
+        _textRole: role,
+      };
+    }
+
+    function groupPdfTextItemsIntoLines(items) {
+      const source = (Array.isArray(items) ? items : [])
+        .filter((item) => item && item.str && String(item.str).trim())
+        .sort((a, b) => {
+          const ay = Number.isFinite(a.baselineY) ? a.baselineY : a.y;
+          const by = Number.isFinite(b.baselineY) ? b.baselineY : b.y;
+          if (Math.abs(ay - by) > 1) return ay - by;
+          return (a.x || 0) - (b.x || 0);
+        });
+      const lines = [];
+
+      for (const item of source) {
+        const baselineY = Number.isFinite(item.baselineY) ? item.baselineY : item.y;
+        const fontSize = Math.max(Number(item.fontSize) || 12, 1);
+        let target = null;
+        for (const line of lines) {
+          const tolerance = Math.max(2, Math.min(line.fontSize || fontSize, fontSize) * 0.45);
+          if (Math.abs(line.baselineY - baselineY) <= tolerance) {
+            target = line;
+            break;
+          }
+        }
+        if (!target) {
+          target = {
+            baselineY,
+            fontSize,
+            items: [],
+          };
+          lines.push(target);
+        }
+        target.items.push(item);
+        target.baselineY = weightedPdfAverage(target.items, 'baselineY', target.baselineY);
+        target.fontSize = weightedPdfAverage(target.items, 'fontSize', target.fontSize);
+      }
+
+      return lines
+        .map(finalizePdfLine)
+        .filter((line) => line && line.text)
+        .sort((a, b) => {
+          if (Math.abs(a.y - b.y) > 1) return a.y - b.y;
+          return a.x - b.x;
+        });
+    }
+
+    function finalizePdfLine(line) {
+      const items = (line.items || []).slice().sort((a, b) => (a.x || 0) - (b.x || 0));
+      if (!items.length) return null;
+
+      let text = '';
+      let previous = null;
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      let bold = false;
+      const fontFamilies = {};
+
+      for (const item of items) {
+        const piece = normalizePdfText(item.str);
+        if (!piece) continue;
+        const fontSize = Math.max(Number(item.fontSize) || line.fontSize || 12, 1);
+        if (shouldInsertPdfSpace(text, piece, previous, item, fontSize)) {
+          text += ' ';
+        }
+        text += piece;
+        left = Math.min(left, Number(item.x) || 0);
+        top = Math.min(top, Number(item.y) || 0);
+        right = Math.max(right, getPdfItemRight(item));
+        bottom = Math.max(bottom, getPdfItemBottom(item));
+        bold = bold || hasPdfBoldSignal(item);
+        if (item.fontFamily && isUsablePdfFontFamily(item.fontFamily)) {
+          fontFamilies[item.fontFamily] = (fontFamilies[item.fontFamily] || 0) + piece.length;
+        }
+        previous = item;
+      }
+
+      text = text.trim();
+      if (!text) return null;
+
+      const fontSize = dominantPdfNumber(items, 'fontSize', line.fontSize || 12);
+      const lineHeight = Math.max(fontSize * 1.2, bottom - top);
+      return {
+        text,
+        x: left,
+        y: top,
+        right,
+        bottom,
+        width: Math.max(right - left, 1),
+        height: Math.max(bottom - top, lineHeight),
+        baselineY: line.baselineY,
+        fontSize,
+        lineHeight,
+        bold,
+        fontFamily: pickPdfFontFamily(fontFamilies),
+      };
+    }
+
+    function groupPdfLinesIntoBlocks(lines, bodyFontSize) {
+      const blocks = [];
+      let current = null;
+
+      for (const line of lines) {
+        const role = classifyPdfLine(line, bodyFontSize);
+        const enriched = { ...line, role };
+        if (!current || shouldStartNewPdfBlock(current, enriched, bodyFontSize)) {
+          current = {
+            role,
+            lines: [enriched],
+          };
+          blocks.push(current);
+        } else {
+          current.lines.push(enriched);
+        }
+      }
+
+      return blocks.map(finalizePdfBlock).filter((block) => block && block.text);
+    }
+
+    function shouldStartNewPdfBlock(block, line, bodyFontSize) {
+      const previous = block.lines[block.lines.length - 1];
+      if (!previous) return true;
+      if (line.role !== block.role) return true;
+
+      const gap = line.y - previous.bottom;
+      const lineHeight = Math.max(previous.lineHeight || previous.fontSize * 1.2, line.lineHeight || line.fontSize * 1.2);
+      const xDrift = Math.abs((line.x || 0) - (previous.x || 0));
+      const heading = /^Heading\b/.test(line.role);
+      const gapLimit = heading ? lineHeight * 0.75 : Math.max(bodyFontSize * 0.85, lineHeight * 0.65);
+      const driftLimit = heading ? bodyFontSize * 8 : Math.max(bodyFontSize * 4, 42);
+
+      if (gap > gapLimit) return true;
+      if (xDrift > driftLimit) return true;
+      if (/^(?:\d+[\.)]|[a-z][\.)]|[ivxlcdm]+[\.)])\s+/i.test(line.text) && block.lines.length > 0) return true;
+      return false;
+    }
+
+    function finalizePdfBlock(block) {
+      const lines = block.lines || [];
+      if (!lines.length) return null;
+      let text = '';
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      let boldCount = 0;
+      const fontFamilies = {};
+
+      for (const line of lines) {
+        text = appendPdfLineText(text, line.text);
+        left = Math.min(left, line.x);
+        top = Math.min(top, line.y);
+        right = Math.max(right, line.right);
+        bottom = Math.max(bottom, line.bottom);
+        if (line.bold) boldCount++;
+        if (line.fontFamily) {
+          fontFamilies[line.fontFamily] = (fontFamilies[line.fontFamily] || 0) + line.text.length;
+        }
+      }
+
+      const fontSize = dominantPdfNumber(lines, 'fontSize', 12);
+      const lineHeight = inferPdfBlockLineHeight(lines, fontSize);
+      return {
+        role: block.role,
+        text,
+        x: left,
+        y: top,
+        width: Math.max(right - left + 2, 1),
+        height: Math.max(bottom - top, lineHeight * lines.length),
+        fontSize,
+        lineHeight,
+        bold: /^Heading\b/.test(block.role) || boldCount >= Math.ceil(lines.length / 2),
+        fontFamily: pickPdfFontFamily(fontFamilies),
+      };
+    }
+
+    function classifyPdfLine(line, bodyFontSize) {
+      const size = Math.max(Number(line.fontSize) || bodyFontSize || 12, 1);
+      const body = Math.max(Number(bodyFontSize) || size, 1);
+      const ratio = size / body;
+      const text = String(line.text || '').trim();
+      const numberedHeading = /^(?:\d+(?:\.\d+)*[\.)]|[ivxlcdm]+[\.)])\s+/i.test(text);
+      const alphaHeading = /^[a-z][\.)]\s+\S/i.test(text);
+
+      if (ratio >= 1.65 || (numberedHeading && ratio >= 1.35)) return 'Heading 1';
+      if (ratio >= 1.42 || (alphaHeading && ratio >= 1.18)) return 'Heading 2';
+      if (ratio >= 1.25) return 'Heading 3';
+      if ((line.bold || alphaHeading || numberedHeading) && ratio >= 1.12) return 'Heading 4';
+      return 'Normal Text';
+    }
+
+    function estimatePdfBodyFontSize(lines) {
+      if (!lines.length) return 12;
+      const buckets = {};
+      for (const line of lines) {
+        const size = Math.max(Number(line.fontSize) || 12, 1);
+        const key = String(Math.round(size * 2) / 2);
+        const weight = Math.max(String(line.text || '').length, 1);
+        buckets[key] = (buckets[key] || 0) + weight;
+      }
+      let bestSize = Number(lines[0].fontSize) || 12;
+      let bestWeight = -1;
+      for (const key of Object.keys(buckets)) {
+        if (buckets[key] > bestWeight) {
+          bestWeight = buckets[key];
+          bestSize = Number(key);
+        }
+      }
+      return bestSize || 12;
+    }
+
+    function inferPdfBlockLineHeight(lines, fontSize) {
+      if (!lines || lines.length < 2) {
+        return Math.max(fontSize * 1.2, fontSize);
+      }
+      const deltas = [];
+      for (let i = 1; i < lines.length; i++) {
+        const delta = (lines[i].baselineY || lines[i].y) - (lines[i - 1].baselineY || lines[i - 1].y);
+        if (delta > 0) deltas.push(delta);
+      }
+      if (!deltas.length) return Math.max(fontSize * 1.2, fontSize);
+      deltas.sort((a, b) => a - b);
+      return Math.max(deltas[Math.floor(deltas.length / 2)], fontSize);
+    }
+
+    function appendPdfLineText(current, next) {
+      const cleanNext = String(next || '').trim();
+      if (!current) return cleanNext;
+      if (!cleanNext) return current;
+      if (/-$/.test(current)) return current + cleanNext;
+      if (/^[,.;:!?)]/.test(cleanNext)) return current + cleanNext;
+      return `${current} ${cleanNext}`;
+    }
+
+    function shouldInsertPdfSpace(currentText, nextPiece, previous, item, fontSize) {
+      if (!currentText || !previous) return false;
+      if (/^[,.;:!?)]/.test(nextPiece)) return false;
+      if (/[-(/]$/.test(currentText)) return false;
+      const gap = (Number(item.x) || 0) - getPdfItemRight(previous);
+      return gap > Math.max(fontSize * 0.12, 1);
+    }
+
+    function normalizePdfText(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getPdfItemRight(item) {
+      const width = Number(item.width);
+      const fallbackWidth = estimatePdfTextWidth(item.str, item.fontSize);
+      return (Number(item.x) || 0) + (Number.isFinite(width) && width > 0 ? width : fallbackWidth);
+    }
+
+    function getPdfItemBottom(item) {
+      const height = Number(item.height);
+      const fallbackHeight = Number(item.fontSize) || 12;
+      return (Number(item.y) || 0) + (Number.isFinite(height) && height > 0 ? height : fallbackHeight);
+    }
+
+    function estimatePdfTextWidth(text, fontSize) {
+      return String(text || '').length * (Number(fontSize) || 12) * 0.52;
+    }
+
+    function hasPdfBoldSignal(item) {
+      const value = `${item.fontName || ''} ${item.fontFamily || ''}`.toLowerCase();
+      return /bold|black|heavy|semi|demi|700|800|900/.test(value);
+    }
+
+    function weightedPdfAverage(items, key, fallback) {
+      let total = 0;
+      let weightTotal = 0;
+      for (const item of items || []) {
+        const value = Number(item[key]);
+        if (!Number.isFinite(value)) continue;
+        const weight = Math.max(String(item.str || '').trim().length, 1);
+        total += value * weight;
+        weightTotal += weight;
+      }
+      return weightTotal ? total / weightTotal : fallback;
+    }
+
+    function dominantPdfNumber(items, key, fallback) {
+      const buckets = {};
+      for (const item of items || []) {
+        const value = Number(item[key]);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        const rounded = Math.round(value * 2) / 2;
+        const bucket = String(rounded);
+        buckets[bucket] = (buckets[bucket] || 0) + Math.max(String(item.text || item.str || '').length, 1);
+      }
+      let best = fallback;
+      let bestWeight = -1;
+      for (const bucket of Object.keys(buckets)) {
+        if (buckets[bucket] > bestWeight) {
+          bestWeight = buckets[bucket];
+          best = Number(bucket);
+        }
+      }
+      return Number.isFinite(best) && best > 0 ? best : fallback;
+    }
+
+    function pickPdfFontFamily(fontFamilies) {
+      let best = '';
+      let bestWeight = -1;
+      for (const family of Object.keys(fontFamilies || {})) {
+        if (fontFamilies[family] > bestWeight) {
+          best = family;
+          bestWeight = fontFamilies[family];
+        }
+      }
+      return best || 'Times New Roman';
+    }
+
+    function isUsablePdfFontFamily(value) {
+      const family = String(value || '').trim().toLowerCase();
+      if (!family || family === 'serif' || family === 'sans-serif' || family === 'monospace') {
+        return false;
+      }
+      if (/^g_d\d+_f\d+/.test(family) || /^pdfjs/.test(family)) {
+        return false;
+      }
+      return true;
+    }
+
+    function solidPdfPaint(r, g, b, opacity = 1) {
+      return {
+        type: 'SOLID',
+        color: { r, g, b },
+        opacity,
+      };
+    }
+
+    function roundPdfNumber(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return 0;
+      return Math.round(number * 100) / 100;
     }
 
     function looksLikeHtml(value) {
