@@ -2362,9 +2362,15 @@
     function buildPdfPageFrame(page, index) {
       const lines = groupPdfTextItemsIntoLines(page.textItems || []);
       const bodyFontSize = estimatePdfBodyFontSize(lines);
-      const blocks = groupPdfLinesIntoBlocks(lines, bodyFontSize);
+      const tables = detectPdfTables(lines, page.horizontalLines || [], page, bodyFontSize);
+      const tableLineSet = makePdfTableLineSet(tables);
+      const tableRuleSet = makePdfTableRuleSet(tables);
+      const blocks = groupPdfLinesIntoBlocks(lines.filter((line) => !tableLineSet.has(line)), bodyFontSize);
       const textNodes = blocks.map((block, blockIndex) => buildPdfBlockNode(block, page, blockIndex));
-      const lineNodes = (page.horizontalLines || []).map((line, lineIndex) => buildPdfHorizontalLineNode(line, page, lineIndex));
+      const tableNodes = tables.map((table, tableIndex) => buildPdfTableFrame(table, page, tableIndex));
+      const lineNodes = (page.horizontalLines || [])
+        .filter((line) => !tableRuleSet.has(line))
+        .map((line, lineIndex) => buildPdfHorizontalLineNode(line, page, lineIndex));
       return {
         id: `pdf-page-${page.pageNum || index + 1}`,
         name: `Page ${page.pageNum || index + 1} - body`,
@@ -2376,7 +2382,7 @@
         fills: [solidPdfPaint(1, 1, 1)],
         strokes: [],
         clipsContent: true,
-        children: textNodes.concat(lineNodes).sort(comparePdfNodePosition),
+        children: textNodes.concat(tableNodes, lineNodes).sort(comparePdfNodePosition),
       };
     }
 
@@ -2485,6 +2491,493 @@
         clipsContent: false,
         children,
       };
+    }
+
+    function buildPdfTableFrame(table, page, index) {
+      const children = [];
+      const fontFamily = table.fontFamily || 'Times New Roman';
+
+      const columns = table.columns || [];
+      (table.rows || []).forEach((row, rowIndex) => {
+        const line = row.line;
+        const cells = row.cells || getPdfLineTableCells(line, table.bodyFontSize || line.fontSize || 12);
+        cells.forEach((cell, cellIndex) => {
+          const tolerance = Math.max((table.bodyFontSize || cell.fontSize || 12) * 0.8, 8);
+          let colIndex = columns.findIndex((colX) => Math.abs(colX - cell.columnX) <= tolerance || Math.abs(colX - cell.x) <= tolerance);
+          if (colIndex < 0 && columns.length > 0) {
+            let bestDist = Infinity;
+            columns.forEach((colX, idx) => {
+              const dist = Math.abs(colX - cell.x);
+              if (dist < bestDist) {
+                bestDist = dist;
+                colIndex = idx;
+              }
+            });
+          }
+
+          const colX = colIndex >= 0 ? columns[colIndex] : cell.x;
+
+          let nextColX = null;
+          const rightCells = cells.filter((c) => c !== cell && c.x > cell.x + tolerance);
+          if (rightCells.length > 0) {
+            rightCells.sort((a, b) => a.x - b.x);
+            const nextCell = rightCells[0];
+            let nextCellColIndex = columns.findIndex((colX) => Math.abs(colX - nextCell.columnX) <= tolerance || Math.abs(colX - nextCell.x) <= tolerance);
+            if (nextCellColIndex >= 0) {
+              nextColX = columns[nextCellColIndex];
+            } else if (columns.length > 0 && colIndex >= 0 && colIndex < columns.length - 1) {
+              nextColX = columns[colIndex + 1];
+            } else {
+              nextColX = nextCell.x;
+            }
+          } else if (columns.length > 0 && colIndex >= 0 && colIndex < columns.length - 1) {
+            nextColX = columns[colIndex + 1];
+          } else {
+            nextColX = table.right;
+          }
+
+          const cellWidth = nextColX
+            ? Math.max((nextColX - colX) - Math.max((table.bodyFontSize || 12) * 0.35, 3), 1)
+            : Math.max((table.right || cell.right) - colX, cell.width || 1);
+          const fontSize = Math.max(roundPdfNumber(cell.fontSize || table.fontSize || 12), 1);
+          const lineHeight = Math.max(roundPdfNumber(line.lineHeight || fontSize * 1.2), fontSize);
+
+          children.push({
+            id: `pdf-page-${page.pageNum || 1}-table-${index + 1}-r${rowIndex + 1}c${cellIndex + 1}`,
+            name: `Cell ${rowIndex + 1}.${cellIndex + 1}`,
+            type: 'TEXT',
+            x: Math.max(roundPdfNumber(colX - table.x), 0),
+            y: Math.max(roundPdfNumber(line.y - table.y), 0),
+            width: Math.max(roundPdfNumber(cellWidth), 1),
+            height: Math.max(roundPdfNumber(line.height || lineHeight), lineHeight),
+            characters: cell.text || '',
+            fontName: { family: fontFamily, style: cell.bold ? 'Bold' : 'Regular' },
+            fontSize,
+            lineHeight: { unit: 'PIXELS', value: lineHeight },
+            letterSpacing: { unit: 'PIXELS', value: 0 },
+            textAlignHorizontal: isPdfNumericText(cell.text) ? 'RIGHT' : 'LEFT',
+            textAlignVertical: 'TOP',
+            fills: [solidPdfPaint(0, 0, 0)],
+            opacity: 1,
+            _textRole: 'Table',
+          });
+        });
+      });
+
+      (table.rules || []).forEach((rule, ruleIndex) => {
+        children.push({
+          id: `pdf-page-${page.pageNum || 1}-table-${index + 1}-rule-${ruleIndex + 1}`,
+          name: `Table Rule ${ruleIndex + 1}`,
+          type: 'FRAME',
+          x: Math.max(roundPdfNumber(rule.x - table.x), 0),
+          y: Math.max(roundPdfNumber(rule.y - table.y), 0),
+          width: Math.max(roundPdfNumber(rule.width || 1), 1),
+          height: Math.max(roundPdfNumber(rule.height || 1), 1),
+          fills: [solidPdfPaint(
+            Number(rule.color && rule.color.r) || 0,
+            Number(rule.color && rule.color.g) || 0,
+            Number(rule.color && rule.color.b) || 0,
+            Number.isFinite(rule.opacity) ? rule.opacity : 1
+          )],
+          strokes: [],
+          clipsContent: false,
+        });
+      });
+
+      return {
+        id: `pdf-page-${page.pageNum || 1}-table-${index + 1}`,
+        name: `Table ${index + 1}`,
+        type: 'FRAME',
+        x: Math.max(roundPdfNumber(table.x || 0), 0),
+        y: Math.max(roundPdfNumber(table.y || 0), 0),
+        width: Math.max(roundPdfNumber(table.width || 1), 1),
+        height: Math.max(roundPdfNumber(table.height || 1), 1),
+        fills: [],
+        strokes: [],
+        clipsContent: false,
+        children: children.sort(comparePdfNodePosition),
+      };
+    }
+
+    function getPdfNextTableColumnX(table, cell) {
+      const columns = table && Array.isArray(table.columns) ? table.columns : [];
+      if (!columns.length || !cell) return null;
+      const tolerance = Math.max((table.bodyFontSize || cell.fontSize || 12) * 0.8, 8);
+      const index = columns.findIndex((columnX) => Math.abs(columnX - cell.columnX) <= tolerance || Math.abs(columnX - cell.x) <= tolerance);
+      if (index >= 0 && index < columns.length - 1) {
+        return columns[index + 1];
+      }
+
+      const next = columns.find((columnX) => columnX > (cell.x || 0) + tolerance);
+      return Number.isFinite(next) ? next : null;
+    }
+
+    function detectPdfTables(lines, horizontalLines, page, bodyFontSize) {
+      const sortedLines = (Array.isArray(lines) ? lines : []).slice().sort(comparePdfNodePosition);
+      if (sortedLines.length < 2) return [];
+
+      const annotated = sortedLines.map((line) => {
+        const cells = getPdfLineTableCells(line, bodyFontSize);
+        const numericCount = cells.filter((cell) => isPdfNumericText(cell.text)).length;
+        const hasWideGap = hasPdfTableWideGap(cells, bodyFontSize);
+        const nearbyRules = getPdfNearbyTableRules(line, horizontalLines, page, bodyFontSize);
+        const tableLike = !getPdfListMarker(line.text)
+          && cells.length >= 2
+          && (cells.length >= 3 || numericCount > 0 || hasWideGap || nearbyRules.length > 0);
+        return {
+          line,
+          cells,
+          numericCount,
+          hasWideGap,
+          nearbyRules,
+          tableLike,
+        };
+      });
+
+      const groups = [];
+      let current = null;
+      for (const entry of annotated) {
+        if (!entry.tableLike) {
+          if (current) {
+            groups.push(current);
+            current = null;
+          }
+          continue;
+        }
+
+        if (!current) {
+          current = [entry];
+          continue;
+        }
+
+        const previous = current[current.length - 1];
+        if (shouldPdfTableContinue(previous, entry, bodyFontSize)) {
+          current.push(entry);
+        } else {
+          groups.push(current);
+          current = [entry];
+        }
+      }
+      if (current) groups.push(current);
+
+      return groups
+        .map((group, index) => finalizePdfTableGroup(group, horizontalLines, page, bodyFontSize, index))
+        .filter(Boolean);
+    }
+
+    function makePdfTableLineSet(tables) {
+      const set = new Set();
+      for (const table of tables || []) {
+        for (const row of table.rows || []) {
+          if (row.line) set.add(row.line);
+        }
+      }
+      return set;
+    }
+
+    function makePdfTableRuleSet(tables) {
+      const set = new Set();
+      for (const table of tables || []) {
+        for (const rule of table.rules || []) {
+          set.add(rule);
+        }
+      }
+      return set;
+    }
+
+    function shouldPdfTableContinue(previous, entry, bodyFontSize) {
+      const prevLine = previous.line;
+      const line = entry.line;
+      const gap = (line.y || 0) - (prevLine.bottom || prevLine.y || 0);
+      const lineHeight = Math.max(prevLine.lineHeight || bodyFontSize * 1.2, line.lineHeight || bodyFontSize * 1.2);
+      if (gap > Math.max(lineHeight * 1.45, bodyFontSize * 1.8)) return false;
+
+      const overlap = getPdfHorizontalOverlap(prevLine, line);
+      const minWidth = Math.min(prevLine.width || 1, line.width || 1);
+      if (overlap < Math.max(minWidth * 0.35, bodyFontSize * 4)) return false;
+
+      return havePdfSimilarTableColumns(previous.cells, entry.cells, bodyFontSize)
+        || previous.nearbyRules.length > 0
+        || entry.nearbyRules.length > 0
+        || (previous.cells.length >= 3 && entry.cells.length >= 3);
+    }
+
+    function finalizePdfTableGroup(group, horizontalLines, page, bodyFontSize, index) {
+      if (!Array.isArray(group) || group.length < 2) return null;
+
+      const rows = group.map((entry) => ({
+        line: entry.line,
+        cells: entry.cells,
+      }));
+      const lines = rows.map((row) => row.line);
+      const columns = buildPdfTableColumns(rows, bodyFontSize);
+      const columnScore = getPdfTableColumnScore(rows, columns, bodyFontSize);
+      const numericRows = group.filter((entry) => entry.numericCount > 0).length;
+
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      const fontFamilies = {};
+      for (const row of rows) {
+        left = Math.min(left, row.line.x || 0);
+        top = Math.min(top, row.line.y || 0);
+        right = Math.max(right, row.line.right || 0);
+        bottom = Math.max(bottom, row.line.bottom || 0);
+        for (const cell of row.cells || []) {
+          if (cell.fontFamily) {
+            fontFamilies[cell.fontFamily] = (fontFamilies[cell.fontFamily] || 0) + String(cell.text || '').length;
+          }
+        }
+      }
+
+      const nearbyRules = getPdfTableRulesForBounds(horizontalLines, left, top, right, bottom, page, bodyFontSize);
+      const hasRuleSupport = nearbyRules.length >= 2 || nearbyRules.some((rule) => rule.width >= Math.max((right - left) * 0.85, bodyFontSize * 8));
+      const enoughStructure = columnScore >= Math.max(2, Math.ceil(rows.length * 0.6)) || numericRows >= Math.ceil(rows.length * 0.4);
+      if (!hasRuleSupport && !enoughStructure) return null;
+      if (rows.length < 3 && !hasRuleSupport && columnScore < 2) return null;
+
+      for (const rule of nearbyRules) {
+        left = Math.min(left, rule.x || 0);
+        top = Math.min(top, rule.y || 0);
+        right = Math.max(right, (rule.x || 0) + (rule.width || 0));
+        bottom = Math.max(bottom, (rule.y || 0) + (rule.height || 1));
+      }
+
+      const fontSize = dominantPdfNumber(lines, 'fontSize', bodyFontSize || 12);
+      return {
+        id: `table-${index + 1}`,
+        rows,
+        lines,
+        columns,
+        rules: nearbyRules,
+        x: Math.max(left, 0),
+        y: Math.max(top, 0),
+        right,
+        width: Math.max(right - left + 2, 1),
+        height: Math.max(bottom - top + 2, fontSize * rows.length * 1.2),
+        fontSize,
+        bodyFontSize,
+        fontFamily: pickPdfFontFamily(fontFamilies),
+      };
+    }
+
+    function buildPdfTableColumns(rows, bodyFontSize) {
+      const tolerance = Math.max((bodyFontSize || 12) * 0.9, 8);
+      const columns = [];
+      for (const row of rows || []) {
+        for (const cell of row.cells || []) {
+          const x = Number(cell.x);
+          if (!Number.isFinite(x)) continue;
+          const existing = columns.find((column) => Math.abs(column.x - x) <= tolerance);
+          if (existing) {
+            existing.x = ((existing.x * existing.count) + x) / (existing.count + 1);
+            existing.count += 1;
+          } else {
+            columns.push({ x, count: 1 });
+          }
+        }
+      }
+
+      const starts = columns
+        .filter((column) => column.count >= 1)
+        .map((column) => roundPdfNumber(column.x))
+        .sort((a, b) => a - b);
+
+      for (const row of rows || []) {
+        for (const cell of row.cells || []) {
+          cell.columnX = findPdfNearestColumnX(starts, cell.x, tolerance);
+        }
+      }
+
+      return starts;
+    }
+
+    function findPdfNearestColumnX(columns, x, tolerance) {
+      let best = Number(x);
+      let bestDistance = Infinity;
+      for (const columnX of columns || []) {
+        const distance = Math.abs(columnX - x);
+        if (distance < bestDistance && distance <= tolerance) {
+          best = columnX;
+          bestDistance = distance;
+        }
+      }
+      return best;
+    }
+
+    function getPdfTableColumnScore(rows, columns, bodyFontSize) {
+      if (!Array.isArray(rows) || rows.length < 2 || !Array.isArray(columns) || columns.length < 2) {
+        return 0;
+      }
+
+      const tolerance = Math.max((bodyFontSize || 12) * 1.1, 9);
+      let score = 0;
+      for (const row of rows) {
+        const aligned = (row.cells || []).filter((cell) => (
+          columns.some((columnX) => Math.abs(columnX - (cell.x || 0)) <= tolerance)
+        ));
+        if (aligned.length >= Math.min(2, row.cells.length || 0)) {
+          score += 1;
+        }
+      }
+      return score;
+    }
+
+    function getPdfLineTableCells(line, bodyFontSize) {
+      const items = (line && Array.isArray(line.items) ? line.items : [])
+        .slice()
+        .sort((a, b) => (a.x || 0) - (b.x || 0));
+      if (!items.length) {
+        return line ? [{
+          text: line.text || '',
+          x: line.x || 0,
+          right: line.right || 0,
+          width: line.width || 1,
+          fontSize: line.fontSize || bodyFontSize || 12,
+          bold: Boolean(line.bold),
+          fontFamily: line.fontFamily || '',
+        }] : [];
+      }
+
+      const gapLimit = Math.max((bodyFontSize || line.fontSize || 12) * 1.45, 14);
+      const cells = [];
+      let current = null;
+      for (const item of items) {
+        const fontSize = Math.max(Number(item.fontSize) || line.fontSize || bodyFontSize || 12, 1);
+        const visible = withPdfVisibleTextBounds(item, fontSize);
+        const text = normalizePdfText(item.str);
+        if (!text) continue;
+
+        const x = Number(visible.x) || 0;
+        const right = getPdfItemRight(visible);
+        const gap = current ? x - current.right : 0;
+        const shouldSplit = current && shouldSplitPdfTableCell(current.text, text, gap, gapLimit, fontSize);
+
+        if (!current || shouldSplit) {
+          current = {
+            text,
+            x,
+            right,
+            width: Math.max(right - x, 1),
+            fontSize,
+            bold: hasPdfBoldSignal(item),
+            fontFamily: item.fontFamily && isUsablePdfFontFamily(item.fontFamily) ? item.fontFamily : '',
+          };
+          cells.push(current);
+        } else {
+          current.text = appendPdfCellText(current.text, text);
+          current.right = Math.max(current.right, right);
+          current.width = Math.max(current.right - current.x, 1);
+          current.fontSize = Math.max(current.fontSize || fontSize, fontSize);
+          current.bold = current.bold || hasPdfBoldSignal(item);
+          if (!current.fontFamily && item.fontFamily && isUsablePdfFontFamily(item.fontFamily)) {
+            current.fontFamily = item.fontFamily;
+          }
+        }
+      }
+
+      return cells
+        .map((cell) => ({
+          ...cell,
+          text: String(cell.text || '').trim(),
+          width: Math.max((cell.right || 0) - (cell.x || 0), 1),
+        }))
+        .filter((cell) => cell.text);
+    }
+
+    function shouldSplitPdfTableCell(previousText, nextText, gap, gapLimit, fontSize) {
+      if (gap <= gapLimit) return false;
+      if (/^[,.;:!?)]/.test(nextText)) return false;
+      if (/[-(/]$/.test(previousText)) return false;
+      if (isPdfNumericText(previousText) || isPdfNumericText(nextText)) {
+        return gap > Math.max((fontSize || 12) * 0.9, 8);
+      }
+      return true;
+    }
+
+    function appendPdfCellText(current, next) {
+      const cleanNext = String(next || '').trim();
+      if (!current) return cleanNext;
+      if (!cleanNext) return current;
+      if (/^[,.;:!?)]/.test(cleanNext)) return current + cleanNext;
+      if (/[-(/]$/.test(current)) return current + cleanNext;
+      return `${current} ${cleanNext}`;
+    }
+
+    function hasPdfTableWideGap(cells, bodyFontSize) {
+      if (!Array.isArray(cells) || cells.length < 2) return false;
+      const threshold = Math.max((bodyFontSize || 12) * 1.8, 18);
+      for (let i = 1; i < cells.length; i++) {
+        if ((cells[i].x || 0) - (cells[i - 1].right || 0) >= threshold) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function havePdfSimilarTableColumns(a, b, bodyFontSize) {
+      const left = Array.isArray(a) ? a : [];
+      const right = Array.isArray(b) ? b : [];
+      if (left.length < 2 || right.length < 2) return false;
+
+      const tolerance = Math.max((bodyFontSize || 12) * 1.2, 10);
+      let matches = 0;
+      for (const cell of left) {
+        if (right.some((candidate) => Math.abs((candidate.x || 0) - (cell.x || 0)) <= tolerance)) {
+          matches += 1;
+        }
+      }
+      return matches >= Math.min(2, left.length, right.length);
+    }
+
+    function getPdfNearbyTableRules(line, horizontalLines, page, bodyFontSize) {
+      if (!line) return [];
+      const margin = Math.max((bodyFontSize || line.fontSize || 12) * 0.9, 8);
+      return (horizontalLines || []).filter((rule) => {
+        if (!rule) return false;
+        const overlap = getPdfHorizontalOverlap(line, {
+          x: rule.x || 0,
+          right: (rule.x || 0) + (rule.width || 0),
+          width: rule.width || 0,
+        });
+        if (overlap < Math.max((line.width || 0) * 0.45, (bodyFontSize || 12) * 4)) return false;
+        if (page && rule.width > (page.width || 0) * 0.98 && line.width < (page.width || 0) * 0.45) return false;
+        const ruleY = rule.y || 0;
+        return ruleY >= (line.y || 0) - margin && ruleY <= (line.bottom || line.y || 0) + margin;
+      });
+    }
+
+    function getPdfTableRulesForBounds(horizontalLines, left, top, right, bottom, page, bodyFontSize) {
+      const margin = Math.max((bodyFontSize || 12) * 1.25, 12);
+      const width = Math.max(right - left, 1);
+      return (horizontalLines || []).filter((rule) => {
+        if (!rule) return false;
+        const ruleRight = (rule.x || 0) + (rule.width || 0);
+        const overlap = getPdfHorizontalOverlap(
+          { x: left, right, width },
+          { x: rule.x || 0, right: ruleRight, width: rule.width || 0 }
+        );
+        if (overlap < Math.max(Math.min(width, rule.width || 0) * 0.45, (bodyFontSize || 12) * 4)) return false;
+        if (page && rule.width > (page.width || 0) * 0.98 && width < (page.width || 0) * 0.45) return false;
+        const ruleY = rule.y || 0;
+        return ruleY >= top - margin && ruleY <= bottom + margin;
+      });
+    }
+
+    function getPdfHorizontalOverlap(a, b) {
+      const left = Math.max(Number(a && a.x) || 0, Number(b && b.x) || 0);
+      const right = Math.min(
+        Number.isFinite(a && a.right) ? Number(a.right) : (Number(a && a.x) || 0) + (Number(a && a.width) || 0),
+        Number.isFinite(b && b.right) ? Number(b.right) : (Number(b && b.x) || 0) + (Number(b && b.width) || 0)
+      );
+      return Math.max(right - left, 0);
+    }
+
+    function isPdfNumericText(text) {
+      const value = String(text || '').trim();
+      if (!value) return false;
+      return /^[-+()]?(?:Rp\s*)?\d[\d.,%:/-]*(?:\s*(?:kg|g|mg|ml|l|cm|mm|m|s|x|hari|jam|menit|detik))?$/i.test(value);
     }
 
     function buildPdfHorizontalLineNode(line, page, index) {
@@ -2619,12 +3112,15 @@
       let current = null;
 
       for (const line of lines) {
-        let role = classifyPdfLine(line, bodyFontSize);
+        const originalRole = classifyPdfLine(line, bodyFontSize);
+        let role = originalRole;
         if (role !== 'List' && current && current.role === 'List' && isPdfListContinuation(current, line, bodyFontSize)) {
           role = 'List';
         }
-        const enriched = { ...line, role };
+        let enriched = { ...line, role };
         if (!current || shouldStartNewPdfBlock(current, enriched, bodyFontSize)) {
+          role = originalRole;
+          enriched = { ...line, role };
           current = {
             role,
             lines: [enriched],
@@ -2642,6 +3138,7 @@
       const previous = block.lines[block.lines.length - 1];
       if (!previous) return true;
       if (line.role !== block.role) return true;
+      if (/^(?:\d+(?:\.\d+)*[\.)]|[ivxlcdm]+[\.)])\s+/i.test(previous.text)) return true;
 
       if (block.role === 'List') {
         const gap = line.y - previous.bottom;
@@ -2887,7 +3384,7 @@
       if (ratio >= 1.65 || (numberedHeading && ratio >= 1.35)) return 'Heading 1';
       if (ratio >= 1.42 || (alphaHeading && ratio >= 1.18)) return 'Heading 2';
       if (ratio >= 1.25) return 'Heading 3';
-      if ((line.bold || alphaHeading || numberedHeading) && ratio >= 1.12) return 'Heading 4';
+      if ((line.bold || alphaHeading || numberedHeading) && (ratio >= 1.12 || (line.bold && (numberedHeading || alphaHeading)))) return 'Heading 4';
       return 'Normal Text';
     }
 
