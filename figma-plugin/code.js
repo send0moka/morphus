@@ -35,6 +35,11 @@ figma.ui.onmessage = async (msg) => {
 
     if (msg.type === 'CONVERT_AND_BUILD') {
       await convertAndBuild(msg.payload);
+      return;
+    }
+
+    if (msg.type === 'CONVERT_PDF_AND_BUILD') {
+      await convertPdfAndBuild(msg.payload);
     }
   } catch (err) {
     handlePluginError(err);
@@ -125,6 +130,69 @@ async function convertAndBuildViewports(serverUrl, payload, viewports) {
     variants: viewports.length,
   });
   figma.notify(`Morphus: ${viewports.length} viewports, ${nodeCount} nodes built`);
+}
+
+async function convertPdfAndBuild(payload) {
+  const pages = payload && payload.pages;
+  if (!pages || pages.length === 0) {
+    throw new Error('No PDF pages to convert.');
+  }
+
+  const serverUrl = await resolveConverterUrl(null);
+  let totalNodeCount = 0;
+  const styleCounts = { paint: 0, text: 0 };
+
+  for (let index = 0; index < pages.length; index++) {
+    const page = pages[index];
+    const label = `Page ${page.pageNum}`;
+
+    const scopedProgress = (text, percent) => {
+      progress(
+        `${label}: ${text}`,
+        scaleMultiViewportProgress(index, pages.length, percent)
+      );
+    };
+
+    scopedProgress('Uploading to converter...', 2);
+
+    const result = await convertViewport(serverUrl, {
+      html: page.html,
+      sourceName: page.sourceName || `page-${page.pageNum}.html`,
+    }, {
+      name: `page-${page.pageNum}`,
+      label,
+      width: page.width,
+      height: page.height,
+    }, scopedProgress);
+
+    const stats = await buildFromSnapshotWithWebFontRetry(
+      withClientSnapshotMeta(result, {
+        html: page.html,
+        sourceName: page.sourceName,
+        viewportLabel: label,
+        viewport: { width: page.width, height: page.height },
+      }),
+      {
+        notify: false,
+        postDone: false,
+        progressLabel: label,
+        onProgress: scopedProgress,
+      }
+    );
+
+    totalNodeCount += stats.nodeCount;
+    styleCounts.paint += stats.styles.paint;
+    styleCounts.text += stats.styles.text;
+  }
+
+  progress('Done.', 100);
+  figma.ui.postMessage({
+    type: 'DONE',
+    nodeCount: totalNodeCount,
+    styles: styleCounts,
+    variants: pages.length,
+  });
+  figma.notify(`Morphus PDF: ${pages.length} halaman, ${totalNodeCount} nodes dibuat`);
 }
 
 async function buildFromSnapshotWithWebFontRetry(data, options = {}, state = {}) {

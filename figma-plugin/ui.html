@@ -1560,7 +1560,119 @@
           }
         }
 
-        setStatus('PDF to Figma is not connected yet.', 'error');
+        // Resolve which pages to convert
+        let pagesToConvert = [];
+        if (state.pdfPageMode === 'all') {
+          pagesToConvert = Array.from({ length: state.pdfTotalPages }, (_, i) => i + 1);
+        } else if (state.pdfPageMode === 'custom') {
+          pagesToConvert = parsePageRange(state.pdfPageRange, state.pdfTotalPages);
+        } else if (state.pdfPageMode === 'select') {
+          pagesToConvert = [...state.pdfSelectedPages];
+        }
+
+        if (pagesToConvert.length === 0) {
+          setStatus('Tidak ada halaman yang dipilih.', 'error');
+          return;
+        }
+
+        hideConverterDialog();
+        buildBtn.disabled = true;
+        startFakeProgress();
+        setStatus('Menyiapkan halaman PDF...');
+
+        (async () => {
+          try {
+            let pdfjsLib;
+            try {
+              pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs');
+              pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+            } catch (e) {
+              setStatus('Gagal memuat PDF renderer.', 'error');
+              buildBtn.disabled = false;
+              stopFakeProgress();
+              return;
+            }
+
+            const arrayBuffer = await state.selectedPdfFile.arrayBuffer();
+            let pdfDoc;
+            try {
+              pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            } catch (e) {
+              setStatus('Gagal membaca PDF.', 'error');
+              buildBtn.disabled = false;
+              stopFakeProgress();
+              return;
+            }
+
+            const pdfPages = [];
+            for (let idx = 0; idx < pagesToConvert.length; idx++) {
+              const pageNum = pagesToConvert[idx];
+              setStatus(`Memproses halaman ${pageNum} dari ${pagesToConvert.length}...`);
+
+              const page = await pdfDoc.getPage(pageNum);
+              const scale = 2.0; // high-res for quality
+              const viewport = page.getViewport({ scale });
+
+              // Render page to canvas → PNG
+              const canvas = document.createElement('canvas');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              const ctx = canvas.getContext('2d');
+              await page.render({ canvasContext: ctx, viewport }).promise;
+              const pngDataUrl = canvas.toDataURL('image/png');
+
+              // Extract text content with positions
+              const textContent = await page.getTextContent();
+              const textItems = [];
+              for (const item of textContent.items) {
+                if (!item.str || !item.str.trim()) continue;
+                // PDF transform: [scaleX, skewX, skewY, scaleY, transX, transY]
+                const [, , , scaleY, tx, ty] = item.transform;
+                const fontSize = Math.abs(scaleY) * scale;
+                // PDF origin is bottom-left; HTML is top-left
+                const x = tx * scale;
+                const y = viewport.height - (ty * scale) - fontSize;
+                textItems.push({
+                  str: item.str,
+                  x: Math.round(x),
+                  y: Math.round(y),
+                  fontSize: Math.round(fontSize),
+                  fontName: item.fontName || '',
+                  width: Math.round((item.width || 0) * scale),
+                });
+              }
+
+              // Build HTML: image background + transparent text overlay
+              const textSpans = textItems.map(t =>
+                `<span style="position:absolute;left:${t.x}px;top:${t.y}px;font-size:${t.fontSize}px;white-space:pre;color:transparent;pointer-events:none;line-height:1">${t.str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`
+              ).join('');
+
+              const html = `<!doctype html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}</style></head><body style="width:${viewport.width}px;height:${viewport.height}px;position:relative;overflow:hidden"><img src="${pngDataUrl}" style="position:absolute;top:0;left:0;width:${viewport.width}px;height:${viewport.height}px;display:block">${textSpans}</body></html>`;
+
+              pdfPages.push({
+                pageNum,
+                html,
+                width: viewport.width,
+                height: viewport.height,
+                sourceName: `${state.selectedPdfFile.name} — Page ${pageNum}`,
+              });
+            }
+
+            parent.postMessage({
+              pluginMessage: {
+                type: 'CONVERT_PDF_AND_BUILD',
+                payload: {
+                  pages: pdfPages,
+                  sourceName: state.selectedPdfFile.name,
+                },
+              },
+            }, '*');
+          } catch (err) {
+            setStatus('Gagal memproses PDF: ' + (err.message || err), 'error');
+            buildBtn.disabled = false;
+            stopFakeProgress();
+          }
+        })();
         return;
       }
 
@@ -1787,6 +1899,24 @@
       return /^<!doctype\s+html/i.test(text)
         || /<html[\s>]/i.test(text)
         || /<\/?[a-z][\s\S]*>/i.test(text);
+    }
+
+    function parsePageRange(rangeStr, totalPages) {
+      const pages = new Set();
+      const parts = String(rangeStr || '').split(',');
+      for (const part of parts) {
+        const trimmed = part.trim();
+        const rangeMatch = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+        if (rangeMatch) {
+          const from = Math.max(1, parseInt(rangeMatch[1], 10));
+          const to = Math.min(totalPages || 9999, parseInt(rangeMatch[2], 10));
+          for (let p = from; p <= to; p++) pages.add(p);
+        } else {
+          const num = parseInt(trimmed, 10);
+          if (num >= 1 && (!totalPages || num <= totalPages)) pages.add(num);
+        }
+      }
+      return [...pages].sort((a, b) => a - b);
     }
   </script>
 </body>
