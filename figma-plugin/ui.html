@@ -1912,8 +1912,16 @@
         fills: [solidPdfPaint(1, 1, 1)],
         strokes: [],
         clipsContent: true,
-        children: blocks.map((block, blockIndex) => buildPdfTextNode(block, page, blockIndex)),
+        children: blocks.map((block, blockIndex) => buildPdfBlockNode(block, page, blockIndex)),
       };
+    }
+
+    function buildPdfBlockNode(block, page, index) {
+      if (block && block.kind === 'LIST') {
+        return buildPdfListFrame(block, page, index);
+      }
+
+      return buildPdfTextNode(block, page, index);
     }
 
     function buildPdfTextNode(block, page, index) {
@@ -1945,6 +1953,75 @@
         _textRole: role,
       };
     }
+
+    function buildPdfListFrame(block, page, index) {
+      const fontSize = Math.max(roundPdfNumber(block.fontSize || 12), 1);
+      const lineHeight = Math.max(roundPdfNumber(block.lineHeight || fontSize * 1.2), fontSize);
+      const fontFamily = block.fontFamily || 'Times New Roman';
+      const children = [];
+
+      (block.items || []).forEach((item, itemIndex) => {
+        const itemTop = Math.max(roundPdfNumber((item.y || 0) - (block.y || 0)), 0);
+        const itemHeight = Math.max(roundPdfNumber(item.height || lineHeight), lineHeight);
+        const markerX = Math.max(roundPdfNumber((item.markerX || block.x || 0) - (block.x || 0)), 0);
+        const contentX = Math.max(roundPdfNumber((item.contentX || item.x || block.x || 0) - (block.x || 0)), 0);
+        const contentRight = Math.max(roundPdfNumber((item.right || block.x + block.width) - (block.x || 0)), contentX + 1);
+
+        children.push({
+          id: `pdf-page-${page.pageNum || 1}-list-${index + 1}-marker-${itemIndex + 1}`,
+          name: `List Marker ${itemIndex + 1}`,
+          type: 'TEXT',
+          x: markerX,
+          y: itemTop,
+          width: Math.max(roundPdfNumber((item.contentX || 0) - (item.markerX || 0) - fontSize * 0.25), fontSize * 0.65),
+          height: itemHeight,
+          characters: item.marker || '•',
+          fontName: { family: fontFamily, style: 'Regular' },
+          fontSize,
+          lineHeight: { unit: 'PIXELS', value: lineHeight },
+          letterSpacing: { unit: 'PIXELS', value: 0 },
+          textAlignHorizontal: 'LEFT',
+          textAlignVertical: 'TOP',
+          fills: [solidPdfPaint(0, 0, 0)],
+          opacity: 1,
+        });
+
+        children.push({
+          id: `pdf-page-${page.pageNum || 1}-list-${index + 1}-item-${itemIndex + 1}`,
+          name: `List Item ${itemIndex + 1}`,
+          type: 'TEXT',
+          x: contentX,
+          y: itemTop,
+          width: Math.max(contentRight - contentX, 1),
+          height: itemHeight,
+          characters: item.text || '',
+          fontName: { family: fontFamily, style: 'Regular' },
+          fontSize,
+          lineHeight: { unit: 'PIXELS', value: lineHeight },
+          letterSpacing: { unit: 'PIXELS', value: 0 },
+          textAlignHorizontal: 'LEFT',
+          textAlignVertical: 'TOP',
+          fills: [solidPdfPaint(0, 0, 0)],
+          opacity: 1,
+          _textRole: 'List',
+        });
+      });
+
+      return {
+        id: `pdf-page-${page.pageNum || 1}-list-${index + 1}`,
+        name: `List ${index + 1}`,
+        type: 'FRAME',
+        x: Math.max(roundPdfNumber(block.x || 0), 0),
+        y: Math.max(roundPdfNumber(block.y || 0), 0),
+        width: Math.max(roundPdfNumber(block.width || 1), 1),
+        height: Math.max(roundPdfNumber(block.height || lineHeight), lineHeight),
+        fills: [],
+        strokes: [],
+        clipsContent: false,
+        children,
+      };
+    }
+
 
     function groupPdfTextItemsIntoLines(items) {
       const source = (Array.isArray(items) ? items : [])
@@ -2040,6 +2117,7 @@
         lineHeight,
         bold,
         fontFamily: pickPdfFontFamily(fontFamilies),
+        items,
       };
     }
 
@@ -2048,7 +2126,10 @@
       let current = null;
 
       for (const line of lines) {
-        const role = classifyPdfLine(line, bodyFontSize);
+        let role = classifyPdfLine(line, bodyFontSize);
+        if (role !== 'List' && current && current.role === 'List' && isPdfListContinuation(current, line, bodyFontSize)) {
+          role = 'List';
+        }
         const enriched = { ...line, role };
         if (!current || shouldStartNewPdfBlock(current, enriched, bodyFontSize)) {
           current = {
@@ -2069,6 +2150,12 @@
       if (!previous) return true;
       if (line.role !== block.role) return true;
 
+      if (block.role === 'List') {
+        const gap = line.y - previous.bottom;
+        const lineHeight = Math.max(previous.lineHeight || previous.fontSize * 1.2, line.lineHeight || line.fontSize * 1.2);
+        return gap > Math.max(lineHeight * 0.95, bodyFontSize * 1.1);
+      }
+
       const gap = line.y - previous.bottom;
       const lineHeight = Math.max(previous.lineHeight || previous.fontSize * 1.2, line.lineHeight || line.fontSize * 1.2);
       const xDrift = Math.abs((line.x || 0) - (previous.x || 0));
@@ -2082,9 +2169,28 @@
       return false;
     }
 
+    function isPdfListContinuation(block, line, bodyFontSize) {
+      const previous = block.lines[block.lines.length - 1];
+      if (!previous || getPdfListMarker(line.text)) return false;
+
+      const gap = line.y - previous.bottom;
+      const lineHeight = Math.max(previous.lineHeight || previous.fontSize * 1.2, line.lineHeight || line.fontSize * 1.2);
+      if (gap > Math.max(lineHeight * 0.9, bodyFontSize)) return false;
+
+      const firstListLine = block.lines.find((candidate) => getPdfListMarker(candidate.text));
+      if (!firstListLine) return false;
+      const firstMetrics = getPdfLineListMetrics(firstListLine, getPdfListMarker(firstListLine.text));
+      const contentX = firstMetrics ? firstMetrics.contentX : firstListLine.x + bodyFontSize;
+      return line.x >= contentX - Math.max(bodyFontSize * 0.8, 8);
+    }
+
     function finalizePdfBlock(block) {
       const lines = block.lines || [];
       if (!lines.length) return null;
+      if (block.role === 'List') {
+        return finalizePdfListBlock(lines);
+      }
+
       let text = '';
       let left = Infinity;
       let top = Infinity;
@@ -2121,6 +2227,76 @@
       };
     }
 
+    function finalizePdfListBlock(lines) {
+      const items = [];
+      const fontFamilies = {};
+      let current = null;
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+
+      for (const line of lines) {
+        const marker = getPdfListMarker(line.text);
+        if (marker) {
+          const metrics = getPdfLineListMetrics(line, marker);
+          current = {
+            marker: marker.marker,
+            text: marker.content,
+            markerX: metrics.markerX,
+            contentX: metrics.contentX,
+            x: line.x,
+            y: line.y,
+            right: line.right,
+            bottom: line.bottom,
+            height: Math.max(line.height || 0, line.lineHeight || line.fontSize * 1.2),
+          };
+          items.push(current);
+        } else if (current) {
+          current.text = appendPdfLineText(current.text, line.text);
+          current.contentX = Math.min(current.contentX, line.x);
+          current.right = Math.max(current.right, line.right);
+          current.bottom = Math.max(current.bottom, line.bottom);
+          current.height = Math.max(current.bottom - current.y, current.height);
+        }
+
+        left = Math.min(left, current ? current.markerX : line.x);
+        top = Math.min(top, line.y);
+        right = Math.max(right, current ? current.right : line.right);
+        bottom = Math.max(bottom, line.bottom);
+
+        if (line.fontFamily) {
+          fontFamilies[line.fontFamily] = (fontFamilies[line.fontFamily] || 0) + line.text.length;
+        }
+      }
+
+      const cleanedItems = items
+        .map((item) => ({
+          ...item,
+          text: String(item.text || '').trim(),
+          height: Math.max(item.height, item.bottom - item.y),
+        }))
+        .filter((item) => item.text);
+
+      if (!cleanedItems.length) return null;
+
+      const fontSize = dominantPdfNumber(lines, 'fontSize', 12);
+      const lineHeight = inferPdfBlockLineHeight(lines, fontSize);
+      return {
+        kind: 'LIST',
+        role: 'List',
+        text: cleanedItems.map((item) => `${item.marker} ${item.text}`).join('\n'),
+        x: left,
+        y: top,
+        width: Math.max(right - left + 2, 1),
+        height: Math.max(bottom - top, lineHeight * cleanedItems.length),
+        fontSize,
+        lineHeight,
+        fontFamily: pickPdfFontFamily(fontFamilies),
+        items: cleanedItems,
+      };
+    }
+
     function classifyPdfLine(line, bodyFontSize) {
       const size = Math.max(Number(line.fontSize) || bodyFontSize || 12, 1);
       const body = Math.max(Number(bodyFontSize) || size, 1);
@@ -2128,12 +2304,63 @@
       const text = String(line.text || '').trim();
       const numberedHeading = /^(?:\d+(?:\.\d+)*[\.)]|[ivxlcdm]+[\.)])\s+/i.test(text);
       const alphaHeading = /^[a-z][\.)]\s+\S/i.test(text);
+      const listMarker = getPdfListMarker(text);
+
+      if (listMarker && (listMarker.type === 'bullet' || (ratio <= 1.18 && !line.bold))) {
+        return 'List';
+      }
 
       if (ratio >= 1.65 || (numberedHeading && ratio >= 1.35)) return 'Heading 1';
       if (ratio >= 1.42 || (alphaHeading && ratio >= 1.18)) return 'Heading 2';
       if (ratio >= 1.25) return 'Heading 3';
       if ((line.bold || alphaHeading || numberedHeading) && ratio >= 1.12) return 'Heading 4';
       return 'Normal Text';
+    }
+
+    function getPdfListMarker(text) {
+      const value = String(text || '').trim();
+      if (!value) return null;
+
+      const bulletMatch = value.match(/^([•●○◦▪▫‣⁃*-])\s*(.+)$/);
+      if (bulletMatch && bulletMatch[2]) {
+        return {
+          type: 'bullet',
+          marker: bulletMatch[1] === '*' || bulletMatch[1] === '-' ? '•' : bulletMatch[1],
+          content: bulletMatch[2].trim(),
+        };
+      }
+
+      const orderedMatch = value.match(/^((?:\d+|[a-zA-Z]|[ivxlcdmIVXLCDM]+)[\.)])\s+(.+)$/);
+      if (orderedMatch && orderedMatch[2]) {
+        return {
+          type: 'ordered',
+          marker: orderedMatch[1],
+          content: orderedMatch[2].trim(),
+        };
+      }
+
+      return null;
+    }
+
+    function getPdfLineListMetrics(line, marker) {
+      const items = (line.items || []).slice().sort((a, b) => (a.x || 0) - (b.x || 0));
+      const fontSize = Math.max(Number(line.fontSize) || 12, 1);
+      const markerX = Number(line.x) || 0;
+      let contentX = markerX + estimatePdfTextWidth(`${marker.marker} `, fontSize) + fontSize * 0.25;
+
+      if (items.length > 1 && normalizePdfText(items[0].str) === marker.marker) {
+        contentX = Math.max(Number(items[1].x) || contentX, contentX);
+      } else if (items.length > 0) {
+        const first = normalizePdfText(items[0].str);
+        if (first.startsWith(marker.marker) && first.length > marker.marker.length) {
+          contentX = markerX + estimatePdfTextWidth(`${marker.marker} `, fontSize);
+        }
+      }
+
+      return {
+        markerX,
+        contentX: Math.max(contentX, markerX + fontSize * 0.8),
+      };
     }
 
     function estimatePdfBodyFontSize(lines) {
