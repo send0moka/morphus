@@ -2867,6 +2867,7 @@
       const gapLimit = Math.max((bodyFontSize || line.fontSize || 12) * 1.45, 14);
       const cells = [];
       let current = null;
+      let previousItem = null;
       for (const item of items) {
         const fontSize = Math.max(Number(item.fontSize) || line.fontSize || bodyFontSize || 12, 1);
         const visible = withPdfVisibleTextBounds(item, fontSize);
@@ -2890,7 +2891,9 @@
           };
           cells.push(current);
         } else {
-          current.text = appendPdfCellText(current.text, text);
+          const prevVisible = previousItem ? withPdfVisibleTextBounds(previousItem, previousItem.fontSize || fontSize) : null;
+          const needsSpace = prevVisible ? shouldInsertPdfSpace(current.text, text, prevVisible, visible, fontSize) : true;
+          current.text = needsSpace ? `${current.text} ${text}` : `${current.text}${text}`;
           current.right = Math.max(current.right, right);
           current.width = Math.max(current.right - current.x, 1);
           current.fontSize = Math.max(current.fontSize || fontSize, fontSize);
@@ -2899,6 +2902,7 @@
             current.fontFamily = item.fontFamily;
           }
         }
+        previousItem = item;
       }
 
       return cells
@@ -3507,11 +3511,11 @@
       if (/[-(/]$/.test(currentText)) return false;
 
       const trimmed = currentText.trim();
-      const lastCharIsLetter = /\b[a-zA-Z]$/.test(trimmed);
+      const lastCharIsLetter = /[a-zA-Z]$/.test(trimmed);
       const nextStartsLetter = /^[a-zA-Z]/.test(nextPiece);
       const gap = (Number(item.x) || 0) - getPdfItemRight(previous);
 
-      if (lastCharIsLetter && nextStartsLetter && gap < fontSize * 2.0) {
+      if (lastCharIsLetter && nextStartsLetter && gap < Math.max(fontSize * 0.28, 3.0)) {
         return false;
       }
 
