@@ -405,6 +405,40 @@ test('splits wrapped inline text into separate line fragments', async () => {
   expect(Math.max(...italic.children.map((child) => child.rect.width))).toBeLessThan(italic.rect.width);
 }, 30000);
 
+test('splits multiline direct text after inline visual boxes into line fragments', async () => {
+  const { domTree } = await extractFromHtml(`
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; }
+      p { width: 300px; font-size: 28px; line-height: 40px; color: rgb(80, 80, 100); }
+      code {
+        background: rgb(30, 30, 45);
+        color: rgb(200, 255, 60);
+        padding: 2px 8px;
+        font-family: monospace;
+      }
+    </style>
+    <p>Font sebagai <code>.woff2</code>, lalu ditanam di <code>@font-face</code>. File mandiri sepenuhnya untuk demo ekstra panjang.</p>
+  `, {
+    width: 420,
+    height: 220,
+  });
+
+  const groups = [];
+  find(domTree, (node) => {
+    if (node._directTextFragmentGroup) {
+      groups.push(node);
+    }
+    return false;
+  });
+  const group = groups.find((node) => node.children.map((child) => child.text).join(' ').includes('File mandiri'));
+
+  expect(group).toBeTruthy();
+  expect(group.children.length).toBeGreaterThan(1);
+  expect(group.children.every((child) => child.isTextContainer && child._directTextFragment)).toBe(true);
+  expect(group.children.map((child) => child.text).join(' ')).toContain('File mandiri');
+  expect(group.children[0].rect.x).toBeGreaterThan(group.children[1].rect.x);
+}, 30000);
+
 test('includes generated inline pseudo text when collapsing phrasing content', async () => {
   const { domTree } = await extractFromHtml(`
     <style>

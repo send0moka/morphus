@@ -1892,6 +1892,14 @@ function walkDOMInBrowser() {
       return null;
     }
 
+    const fragmentRects = measureTextRangeClientRects(textNode, 0, (textNode.textContent || '').length);
+    if (fragmentRects.length > 1) {
+      const fragmentGroup = buildDirectTextFragmentGroup(textNode, parentStyles, fragmentRects);
+      if (fragmentGroup) {
+        return fragmentGroup;
+      }
+    }
+
     const range = document.createRange();
     range.selectNodeContents(textNode);
     const rect = range.getBoundingClientRect();
@@ -1926,6 +1934,162 @@ function walkDOMInBrowser() {
       }],
       isTextContainer: true,
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      computed,
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children: [],
+    };
+  }
+
+  function buildDirectTextFragmentGroup(textNode, parentStyles, fragmentRects) {
+    const lines = collectDirectTextNodeLines(textNode, parentStyles, fragmentRects);
+    const children = lines
+      .map((line) => buildDirectTextFragmentNode(parentStyles, line))
+      .filter(Boolean);
+
+    if (children.length <= 1) {
+      return null;
+    }
+
+    const groupRect = children.reduce((rect, child) => unionTwoRects(rect, child.rect), null);
+    if (!groupRect) {
+      return null;
+    }
+
+    return {
+      tag: 'span',
+      id: null,
+      classList: [],
+      text: null,
+      textRuns: [],
+      isTextContainer: false,
+      _directTextFragmentGroup: true,
+      rect: groupRect,
+      computed: makeTransparentInlineWrapperStyles(parentStyles, groupRect),
+      pseudo: {
+        before: null,
+        after: null,
+      },
+      children,
+    };
+  }
+
+  function collectDirectTextNodeLines(textNode, parentStyles, fragmentRects) {
+    const lines = fragmentRects.map((fragmentRect) => ({
+      fragmentRect,
+      text: '',
+      runs: [],
+      textRect: null,
+    }));
+    const text = textNode.textContent || '';
+    const tokenPattern = /\s+|\S+/g;
+    let pendingWhitespace = false;
+    let previousLineIndex = null;
+    let match;
+
+    while ((match = tokenPattern.exec(text)) !== null) {
+      const token = match[0];
+      if (/^\s+$/.test(token)) {
+        pendingWhitespace = true;
+        continue;
+      }
+
+      appendMeasuredDirectToken(match.index, match.index + token.length, token);
+    }
+
+    for (const line of lines) {
+      if (!line.textRect) {
+        line.textRect = line.fragmentRect;
+      }
+      line.text = normalizeTextContent(line.text);
+    }
+
+    return lines;
+
+    function appendMeasuredDirectToken(start, end, token) {
+      const tokenRects = measureTextRangeClientRects(textNode, start, end);
+      if (tokenRects.length <= 1) {
+        const rect = tokenRects[0];
+        if (!rect) return;
+        appendDirectLineText(findBestFragmentIndex(rect, fragmentRects), token, rect);
+        return;
+      }
+
+      let segment = '';
+      let segmentLineIndex = null;
+      let segmentRect = null;
+
+      for (let offset = start; offset < end; offset++) {
+        const char = text.slice(offset, offset + 1);
+        const charRect = measureTextRangeClientRects(textNode, offset, offset + 1)[0];
+        if (!charRect) continue;
+
+        const lineIndex = findBestFragmentIndex(charRect, fragmentRects);
+        if (segment && lineIndex !== segmentLineIndex) {
+          appendDirectLineText(segmentLineIndex, segment, segmentRect);
+          segment = '';
+          segmentRect = null;
+        }
+
+        segment += char;
+        segmentLineIndex = lineIndex;
+        segmentRect = unionTwoRects(segmentRect, charRect);
+      }
+
+      if (segment) {
+        appendDirectLineText(segmentLineIndex, segment, segmentRect);
+      }
+    }
+
+    function appendDirectLineText(lineIndex, rawToken, rect) {
+      const line = lines[lineIndex];
+      if (!line || !rawToken || !rect) {
+        return;
+      }
+
+      const normalizedToken = normalizeTextFragment(rawToken);
+      if (!normalizedToken) {
+        return;
+      }
+
+      const prefix = pendingWhitespace && previousLineIndex === lineIndex && line.text ? ' ' : '';
+      const text = prefix + normalizedToken;
+      line.text += text;
+      line.runs.push({
+        text,
+        lineIndex: 0,
+        computed: extractTextRunStyles(parentStyles),
+      });
+      line.textRect = unionTwoRects(line.textRect, rect);
+      pendingWhitespace = false;
+      previousLineIndex = lineIndex;
+    }
+  }
+
+  function buildDirectTextFragmentNode(parentStyles, line) {
+    if (!line?.text || !line.textRect) {
+      return null;
+    }
+
+    const computed = extractRelevantStyles(parentStyles);
+    computed.display = 'inline';
+    computed.position = 'static';
+    computed.width = `${line.textRect.width}px`;
+    computed.height = `${line.textRect.height}px`;
+    computed.minWidth = '0px';
+    computed.minHeight = '0px';
+
+    return {
+      tag: 'span',
+      id: null,
+      classList: [],
+      text: line.text,
+      textRuns: line.runs,
+      isTextContainer: true,
+      _directTextFragment: true,
+      rect: line.textRect,
       computed,
       pseudo: {
         before: null,
