@@ -1641,11 +1641,13 @@
                 });
               }
 
+              const horizontalLines = await extractPdfHorizontalLines(page, viewport, pdfjsLib);
               pdfPages.push({
                 pageNum,
                 width: viewport.width,
                 height: viewport.height,
                 textItems,
+                horizontalLines,
                 sourceName: `${state.selectedPdfFile.name} — Page ${pageNum}`,
               });
             }
@@ -1880,6 +1882,466 @@
       return /\.pdf$/i.test(name) && (!type || type === 'application/pdf' || type === 'application/octet-stream');
     }
 
+    async function extractPdfHorizontalLines(page, viewport, pdfjsLib) {
+      if (!page || typeof page.getOperatorList !== 'function') {
+        return [];
+      }
+
+      try {
+        const operatorList = await page.getOperatorList();
+        const ops = pdfjsLib && pdfjsLib.OPS ? pdfjsLib.OPS : {};
+        const lines = [];
+        const state = createPdfGraphicsState();
+        let path = createPdfPath();
+
+        for (let index = 0; index < (operatorList.fnArray || []).length; index++) {
+          const fn = operatorList.fnArray[index];
+          const args = operatorList.argsArray[index] || [];
+
+          if (isPdfOp(fn, ops, 'save', 10)) {
+            state.stack.push(clonePdfGraphicsState(state));
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'restore', 11)) {
+            const restored = state.stack.pop();
+            if (restored) restorePdfGraphicsState(state, restored);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'transform', 12)) {
+            state.transform = multiplyPdfMatrices(state.transform, args);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setLineWidth', 2)) {
+            state.lineWidth = Math.max(Number(args[0]) || 1, 0.1);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setStrokeGray', 60)) {
+            state.strokeColor = pdfGrayColor(args[0]);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setFillGray', 61)) {
+            state.fillColor = pdfGrayColor(args[0]);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setStrokeRGBColor', 62)) {
+            state.strokeColor = pdfRgbColor(args);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setFillRGBColor', 63)) {
+            state.fillColor = pdfRgbColor(args);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setStrokeCMYKColor', 64)) {
+            state.strokeColor = pdfCmykColor(args);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setFillCMYKColor', 65)) {
+            state.fillColor = pdfCmykColor(args);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setStrokeColor', 56) || isPdfOp(fn, ops, 'setStrokeColorN', 57)) {
+            state.strokeColor = pdfGenericColor(args, state.strokeColor);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'setFillColor', 58) || isPdfOp(fn, ops, 'setFillColorN', 59)) {
+            state.fillColor = pdfGenericColor(args, state.fillColor);
+            continue;
+          }
+
+          if (isPdfOp(fn, ops, 'constructPath', 91)) {
+            appendPdfConstructedPath(path, args, ops);
+            continue;
+          }
+
+          if (appendPdfDirectPathOp(path, fn, args, ops)) {
+            continue;
+          }
+
+          if (isPdfStrokeOp(fn, ops)) {
+            pushPdfStrokeLines(lines, path, state, viewport);
+          }
+
+          if (isPdfFillOp(fn, ops)) {
+            pushPdfFilledLines(lines, path, state, viewport);
+          }
+
+          if (isPdfPaintOrEndPathOp(fn, ops)) {
+            path = createPdfPath();
+          }
+        }
+
+        return normalizePdfHorizontalLines(lines, viewport);
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function createPdfGraphicsState() {
+      return {
+        transform: [1, 0, 0, 1, 0, 0],
+        lineWidth: 1,
+        strokeColor: { r: 0, g: 0, b: 0 },
+        fillColor: { r: 0, g: 0, b: 0 },
+        stack: [],
+      };
+    }
+
+    function clonePdfGraphicsState(state) {
+      return {
+        transform: state.transform.slice(),
+        lineWidth: state.lineWidth,
+        strokeColor: { ...state.strokeColor },
+        fillColor: { ...state.fillColor },
+      };
+    }
+
+    function restorePdfGraphicsState(state, restored) {
+      state.transform = restored.transform.slice();
+      state.lineWidth = restored.lineWidth;
+      state.strokeColor = { ...restored.strokeColor };
+      state.fillColor = { ...restored.fillColor };
+    }
+
+    function createPdfPath() {
+      return {
+        current: null,
+        start: null,
+        segments: [],
+        rects: [],
+      };
+    }
+
+    function appendPdfConstructedPath(path, args, ops) {
+      const pathOps = args[0] || [];
+      const coords = args[1] || [];
+      let coordIndex = 0;
+
+      for (const command of pathOps) {
+        if (isPdfOp(command, ops, 'moveTo', 13)) {
+          pdfMoveTo(path, coords[coordIndex], coords[coordIndex + 1]);
+          coordIndex += 2;
+        } else if (isPdfOp(command, ops, 'lineTo', 14)) {
+          pdfLineTo(path, coords[coordIndex], coords[coordIndex + 1]);
+          coordIndex += 2;
+        } else if (isPdfOp(command, ops, 'rectangle', 19)) {
+          pdfRectangle(path, coords[coordIndex], coords[coordIndex + 1], coords[coordIndex + 2], coords[coordIndex + 3]);
+          coordIndex += 4;
+        } else if (isPdfOp(command, ops, 'closePath', 18)) {
+          pdfClosePath(path);
+        } else if (isPdfOp(command, ops, 'curveTo', 15)) {
+          coordIndex += 6;
+        } else if (isPdfOp(command, ops, 'curveTo2', 16) || isPdfOp(command, ops, 'curveTo3', 17)) {
+          coordIndex += 4;
+        }
+      }
+    }
+
+    function appendPdfDirectPathOp(path, fn, args, ops) {
+      if (isPdfOp(fn, ops, 'moveTo', 13)) {
+        pdfMoveTo(path, args[0], args[1]);
+        return true;
+      }
+      if (isPdfOp(fn, ops, 'lineTo', 14)) {
+        pdfLineTo(path, args[0], args[1]);
+        return true;
+      }
+      if (isPdfOp(fn, ops, 'rectangle', 19)) {
+        pdfRectangle(path, args[0], args[1], args[2], args[3]);
+        return true;
+      }
+      if (isPdfOp(fn, ops, 'closePath', 18)) {
+        pdfClosePath(path);
+        return true;
+      }
+      return false;
+    }
+
+    function pdfMoveTo(path, x, y) {
+      const point = pdfPoint(x, y);
+      path.current = point;
+      path.start = point;
+    }
+
+    function pdfLineTo(path, x, y) {
+      const next = pdfPoint(x, y);
+      if (path.current) {
+        path.segments.push({ from: path.current, to: next });
+      }
+      path.current = next;
+    }
+
+    function pdfRectangle(path, x, y, width, height) {
+      const rect = {
+        x: Number(x) || 0,
+        y: Number(y) || 0,
+        width: Number(width) || 0,
+        height: Number(height) || 0,
+      };
+      path.rects.push(rect);
+      const p1 = pdfPoint(rect.x, rect.y);
+      const p2 = pdfPoint(rect.x + rect.width, rect.y);
+      const p3 = pdfPoint(rect.x + rect.width, rect.y + rect.height);
+      const p4 = pdfPoint(rect.x, rect.y + rect.height);
+      path.segments.push({ from: p1, to: p2 }, { from: p2, to: p3 }, { from: p3, to: p4 }, { from: p4, to: p1 });
+      path.current = p1;
+      path.start = p1;
+    }
+
+    function pdfClosePath(path) {
+      if (path.current && path.start) {
+        path.segments.push({ from: path.current, to: path.start });
+        path.current = path.start;
+      }
+    }
+
+    function pdfPoint(x, y) {
+      return { x: Number(x) || 0, y: Number(y) || 0 };
+    }
+
+    function pushPdfStrokeLines(target, path, state, viewport) {
+      const lineWidth = getPdfViewportLineWidth(state, viewport);
+      for (const segment of path.segments || []) {
+        const from = pdfPointToViewport(segment.from, state, viewport);
+        const to = pdfPointToViewport(segment.to, state, viewport);
+        pushPdfHorizontalSegment(target, from, to, lineWidth, state.strokeColor, viewport);
+      }
+
+      for (const rect of path.rects || []) {
+        pushPdfHorizontalRect(target, rect, state, viewport, state.strokeColor, lineWidth, true);
+      }
+    }
+
+    function pushPdfFilledLines(target, path, state, viewport) {
+      for (const rect of path.rects || []) {
+        pushPdfHorizontalRect(target, rect, state, viewport, state.fillColor, null, false);
+      }
+    }
+
+    function pushPdfHorizontalSegment(target, from, to, lineWidth, color, viewport) {
+      const dx = Math.abs(to.x - from.x);
+      const dy = Math.abs(to.y - from.y);
+      if (dx < Math.max(viewport.width * 0.12, 48)) return;
+      if (dy > Math.max(lineWidth * 1.5, 2)) return;
+
+      const x = Math.min(from.x, to.x);
+      const y = ((from.y + to.y) / 2) - (lineWidth / 2);
+      target.push({
+        x,
+        y,
+        width: dx,
+        height: Math.max(lineWidth, dy, 1),
+        color: normalizePdfLineColor(color),
+        opacity: 1,
+      });
+    }
+
+    function pushPdfHorizontalRect(target, rect, state, viewport, color, strokeWidth, stroked) {
+      const corners = [
+        pdfPointToViewport({ x: rect.x, y: rect.y }, state, viewport),
+        pdfPointToViewport({ x: rect.x + rect.width, y: rect.y }, state, viewport),
+        pdfPointToViewport({ x: rect.x + rect.width, y: rect.y + rect.height }, state, viewport),
+        pdfPointToViewport({ x: rect.x, y: rect.y + rect.height }, state, viewport),
+      ];
+      const xs = corners.map((point) => point.x);
+      const ys = corners.map((point) => point.y);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      const width = Math.max(...xs) - x;
+      const height = Math.max(...ys) - y;
+      const maxHeight = Math.max(strokeWidth || 1, 4);
+
+      if (width < Math.max(viewport.width * 0.12, 48)) return;
+      if (height > maxHeight) return;
+
+      target.push({
+        x,
+        y,
+        width,
+        height: Math.max(stroked ? (strokeWidth || 1) : height, 1),
+        color: normalizePdfLineColor(color),
+        opacity: 1,
+      });
+    }
+
+    function pdfPointToViewport(point, state, viewport) {
+      const transformed = transformPdfPoint(state.transform, point.x, point.y);
+      if (viewport && typeof viewport.convertToViewportPoint === 'function') {
+        const pair = viewport.convertToViewportPoint(transformed.x, transformed.y);
+        return { x: pair[0], y: pair[1] };
+      }
+      return {
+        x: transformed.x,
+        y: (viewport && viewport.height ? viewport.height : 0) - transformed.y,
+      };
+    }
+
+    function getPdfViewportLineWidth(state, viewport) {
+      const from = pdfPointToViewport({ x: 0, y: 0 }, state, viewport);
+      const to = pdfPointToViewport({ x: 0, y: Math.max(state.lineWidth || 1, 0.1) }, state, viewport);
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      return Math.max(roundPdfNumber(distance || state.lineWidth || 1), 1);
+    }
+
+    function normalizePdfHorizontalLines(lines, viewport) {
+      const normalized = [];
+      for (const line of lines || []) {
+        const x = Math.max(roundPdfNumber(line.x), 0);
+        const y = Math.max(roundPdfNumber(line.y), 0);
+        const width = Math.min(roundPdfNumber(line.width), Math.max((viewport.width || 0) - x, 1));
+        const height = Math.max(roundPdfNumber(line.height || 1), 1);
+        if (width < Math.max((viewport.width || 0) * 0.12, 48)) continue;
+        if (height > 5) continue;
+
+        const duplicate = normalized.find((existing) => (
+          Math.abs(existing.y - y) <= 2
+          && Math.abs(existing.x - x) <= 3
+          && Math.abs(existing.width - width) <= 6
+        ));
+        if (duplicate) {
+          duplicate.x = Math.min(duplicate.x, x);
+          duplicate.y = Math.min(duplicate.y, y);
+          duplicate.width = Math.max(duplicate.width, width);
+          duplicate.height = Math.max(duplicate.height, height);
+          continue;
+        }
+
+        normalized.push({
+          x,
+          y,
+          width,
+          height,
+          color: normalizePdfLineColor(line.color),
+          opacity: Number.isFinite(line.opacity) ? line.opacity : 1,
+        });
+      }
+
+      return normalized.sort((a, b) => {
+        if (Math.abs(a.y - b.y) > 1) return a.y - b.y;
+        return a.x - b.x;
+      });
+    }
+
+    function isPdfStrokeOp(fn, ops) {
+      return isPdfOp(fn, ops, 'stroke', 20)
+        || isPdfOp(fn, ops, 'closeStroke', 21)
+        || isPdfOp(fn, ops, 'fillStroke', 24)
+        || isPdfOp(fn, ops, 'eoFillStroke', 25)
+        || isPdfOp(fn, ops, 'closeFillStroke', 26)
+        || isPdfOp(fn, ops, 'closeEOFillStroke', 27);
+    }
+
+    function isPdfFillOp(fn, ops) {
+      return isPdfOp(fn, ops, 'fill', 22)
+        || isPdfOp(fn, ops, 'eoFill', 23)
+        || isPdfOp(fn, ops, 'fillStroke', 24)
+        || isPdfOp(fn, ops, 'eoFillStroke', 25)
+        || isPdfOp(fn, ops, 'closeFillStroke', 26)
+        || isPdfOp(fn, ops, 'closeEOFillStroke', 27);
+    }
+
+    function isPdfPaintOrEndPathOp(fn, ops) {
+      return isPdfStrokeOp(fn, ops) || isPdfFillOp(fn, ops) || isPdfOp(fn, ops, 'endPath', 28);
+    }
+
+    function isPdfOp(value, ops, name, fallback) {
+      return value === name || value === (ops && ops[name]) || value === fallback;
+    }
+
+    function multiplyPdfMatrices(a, b) {
+      const next = Array.isArray(b) || ArrayBuffer.isView(b) ? Array.from(b) : [];
+      if (next.length < 6) return a;
+      return [
+        a[0] * next[0] + a[2] * next[1],
+        a[1] * next[0] + a[3] * next[1],
+        a[0] * next[2] + a[2] * next[3],
+        a[1] * next[2] + a[3] * next[3],
+        a[0] * next[4] + a[2] * next[5] + a[4],
+        a[1] * next[4] + a[3] * next[5] + a[5],
+      ];
+    }
+
+    function transformPdfPoint(matrix, x, y) {
+      return {
+        x: matrix[0] * x + matrix[2] * y + matrix[4],
+        y: matrix[1] * x + matrix[3] * y + matrix[5],
+      };
+    }
+
+    function pdfGenericColor(args, fallback) {
+      const values = flattenPdfColorArgs(args);
+      if (values.length >= 4) return pdfCmykColor(values);
+      if (values.length >= 3) return pdfRgbColor(values);
+      if (values.length >= 1) return pdfGrayColor(values[0]);
+      return fallback || { r: 0, g: 0, b: 0 };
+    }
+
+    function pdfGrayColor(value) {
+      const gray = normalizePdfColorComponent(value);
+      return { r: gray, g: gray, b: gray };
+    }
+
+    function pdfRgbColor(args) {
+      const values = flattenPdfColorArgs(args);
+      return {
+        r: normalizePdfColorComponent(values[0]),
+        g: normalizePdfColorComponent(values[1]),
+        b: normalizePdfColorComponent(values[2]),
+      };
+    }
+
+    function pdfCmykColor(args) {
+      const values = flattenPdfColorArgs(args);
+      const c = normalizePdfColorComponent(values[0]);
+      const m = normalizePdfColorComponent(values[1]);
+      const y = normalizePdfColorComponent(values[2]);
+      const k = normalizePdfColorComponent(values[3]);
+      return {
+        r: clampPdf01(1 - Math.min(1, c + k)),
+        g: clampPdf01(1 - Math.min(1, m + k)),
+        b: clampPdf01(1 - Math.min(1, y + k)),
+      };
+    }
+
+    function flattenPdfColorArgs(args) {
+      if (!args) return [];
+      if (Array.isArray(args) || ArrayBuffer.isView(args)) {
+        if (args.length === 1 && (Array.isArray(args[0]) || ArrayBuffer.isView(args[0]))) {
+          return Array.from(args[0]);
+        }
+        return Array.from(args);
+      }
+      return [args];
+    }
+
+    function normalizePdfColorComponent(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return 0;
+      return clampPdf01(number > 1 ? number / 255 : number);
+    }
+
+    function normalizePdfLineColor(color) {
+      return {
+        r: clampPdf01(Number(color && color.r) || 0),
+        g: clampPdf01(Number(color && color.g) || 0),
+        b: clampPdf01(Number(color && color.b) || 0),
+      };
+    }
+
+    function clampPdf01(value) {
+      return Math.max(0, Math.min(1, value));
+    }
+
     function buildPdfSnapshot(pdfPages, sourceName) {
       const pages = Array.isArray(pdfPages) ? pdfPages : [];
       return {
@@ -1901,6 +2363,8 @@
       const lines = groupPdfTextItemsIntoLines(page.textItems || []);
       const bodyFontSize = estimatePdfBodyFontSize(lines);
       const blocks = groupPdfLinesIntoBlocks(lines, bodyFontSize);
+      const textNodes = blocks.map((block, blockIndex) => buildPdfBlockNode(block, page, blockIndex));
+      const lineNodes = (page.horizontalLines || []).map((line, lineIndex) => buildPdfHorizontalLineNode(line, page, lineIndex));
       return {
         id: `pdf-page-${page.pageNum || index + 1}`,
         name: `Page ${page.pageNum || index + 1} - body`,
@@ -1912,7 +2376,7 @@
         fills: [solidPdfPaint(1, 1, 1)],
         strokes: [],
         clipsContent: true,
-        children: blocks.map((block, blockIndex) => buildPdfBlockNode(block, page, blockIndex)),
+        children: textNodes.concat(lineNodes).sort(comparePdfNodePosition),
       };
     }
 
@@ -1946,8 +2410,9 @@
         fontSize,
         lineHeight: { unit: 'PIXELS', value: lineHeight },
         letterSpacing: { unit: 'PIXELS', value: 0 },
-        textAlignHorizontal: 'LEFT',
+        textAlignHorizontal: block.textAlignHorizontal || 'LEFT',
         textAlignVertical: 'TOP',
+        ...(block.paragraphIndent ? { paragraphIndent: roundPdfNumber(block.paragraphIndent) } : {}),
         fills: [solidPdfPaint(0, 0, 0)],
         opacity: 1,
         _textRole: role,
@@ -2022,6 +2487,33 @@
       };
     }
 
+    function buildPdfHorizontalLineNode(line, page, index) {
+      return {
+        id: `pdf-page-${page.pageNum || 1}-line-${index + 1}`,
+        name: `Horizontal Line ${index + 1}`,
+        type: 'FRAME',
+        x: Math.max(roundPdfNumber(line.x || 0), 0),
+        y: Math.max(roundPdfNumber(line.y || 0), 0),
+        width: Math.max(roundPdfNumber(line.width || 1), 1),
+        height: Math.max(roundPdfNumber(line.height || 1), 1),
+        fills: [solidPdfPaint(
+          Number(line.color && line.color.r) || 0,
+          Number(line.color && line.color.g) || 0,
+          Number(line.color && line.color.b) || 0,
+          Number.isFinite(line.opacity) ? line.opacity : 1
+        )],
+        strokes: [],
+        clipsContent: false,
+      };
+    }
+
+    function comparePdfNodePosition(a, b) {
+      if (Math.abs((a.y || 0) - (b.y || 0)) > 1) {
+        return (a.y || 0) - (b.y || 0);
+      }
+      return (a.x || 0) - (b.x || 0);
+    }
+
 
     function groupPdfTextItemsIntoLines(items) {
       const source = (Array.isArray(items) ? items : [])
@@ -2084,19 +2576,20 @@
         const piece = normalizePdfText(item.str);
         if (!piece) continue;
         const fontSize = Math.max(Number(item.fontSize) || line.fontSize || 12, 1);
-        if (shouldInsertPdfSpace(text, piece, previous, item, fontSize)) {
+        const visibleItem = withPdfVisibleTextBounds(item, fontSize);
+        if (shouldInsertPdfSpace(text, piece, previous, visibleItem, fontSize)) {
           text += ' ';
         }
         text += piece;
-        left = Math.min(left, Number(item.x) || 0);
+        left = Math.min(left, Number(visibleItem.x) || 0);
         top = Math.min(top, Number(item.y) || 0);
-        right = Math.max(right, getPdfItemRight(item));
+        right = Math.max(right, getPdfItemRight(visibleItem));
         bottom = Math.max(bottom, getPdfItemBottom(item));
         bold = bold || hasPdfBoldSignal(item);
         if (item.fontFamily && isUsablePdfFontFamily(item.fontFamily)) {
           fontFamilies[item.fontFamily] = (fontFamilies[item.fontFamily] || 0) + piece.length;
         }
-        previous = item;
+        previous = visibleItem;
       }
 
       text = text.trim();
@@ -2164,9 +2657,34 @@
       const driftLimit = heading ? bodyFontSize * 8 : Math.max(bodyFontSize * 4, 42);
 
       if (gap > gapLimit) return true;
+      if (!heading && isPdfIndentedParagraphStart(block, line, bodyFontSize, gap, lineHeight)) return true;
       if (xDrift > driftLimit) return true;
       if (/^(?:\d+[\.)]|[a-z][\.)]|[ivxlcdm]+[\.)])\s+/i.test(line.text) && block.lines.length > 0) return true;
       return false;
+    }
+
+    function isPdfIndentedParagraphStart(block, line, bodyFontSize, gap, lineHeight) {
+      if (!block || block.role !== 'Normal Text' || !line || getPdfListMarker(line.text)) {
+        return false;
+      }
+
+      const lines = block.lines || [];
+      if (!lines.length) return false;
+
+      const baseX = getPdfBodyLineBaseX(lines);
+      const indent = (line.x || 0) - baseX;
+      if (indent < Math.max(bodyFontSize * 1.25, 12)) {
+        return false;
+      }
+
+      if (gap > Math.max(lineHeight * 1.15, bodyFontSize * 1.4)) {
+        return true;
+      }
+
+      const previous = lines[lines.length - 1];
+      const previousEndsSentence = /[.!?]"?$/.test(String(previous.text || '').trim());
+      const previousIsShort = previous.width < getPdfBlockUsableWidth(lines.concat([line])) * 0.88;
+      return previousEndsSentence || previousIsShort;
     }
 
     function isPdfListContinuation(block, line, bodyFontSize) {
@@ -2213,18 +2731,74 @@
 
       const fontSize = dominantPdfNumber(lines, 'fontSize', 12);
       const lineHeight = inferPdfBlockLineHeight(lines, fontSize);
+      const paragraphIndent = inferPdfParagraphIndent(lines, fontSize);
+      const blockX = Math.min(left, (lines[0] ? lines[0].x - paragraphIndent : left));
+      const textAlignHorizontal = inferPdfTextAlignment(lines, blockX, right);
       return {
         role: block.role,
         text,
-        x: left,
+        x: blockX,
         y: top,
-        width: Math.max(right - left + 2, 1),
+        width: Math.max(right - blockX + 2, 1),
         height: Math.max(bottom - top, lineHeight * lines.length),
         fontSize,
         lineHeight,
         bold: /^Heading\b/.test(block.role) || boldCount >= Math.ceil(lines.length / 2),
         fontFamily: pickPdfFontFamily(fontFamilies),
+        paragraphIndent,
+        textAlignHorizontal,
       };
+    }
+
+    function inferPdfParagraphIndent(lines, fontSize) {
+      if (!Array.isArray(lines) || lines.length < 2) {
+        return 0;
+      }
+
+      const first = lines[0];
+      const baseX = getPdfBodyLineBaseX(lines);
+      const indent = (first.x || 0) - baseX;
+      if (indent >= Math.max((fontSize || 12) * 1.1, 10)) {
+        return roundPdfNumber(indent);
+      }
+      return 0;
+    }
+
+    function inferPdfTextAlignment(lines, blockX, blockRight) {
+      if (!Array.isArray(lines) || lines.length < 2) {
+        return 'LEFT';
+      }
+
+      const usableWidth = Math.max((blockRight || 0) - (blockX || 0), 1);
+      const contentLines = lines.slice(0, Math.max(lines.length - 1, 1));
+      const fullLines = contentLines.filter((line) => (
+        ((line.right || 0) - (line.x || 0)) >= usableWidth * 0.78
+        && Math.abs((line.right || 0) - (blockRight || 0)) <= Math.max(usableWidth * 0.08, 24)
+      ));
+
+      return fullLines.length >= Math.max(1, Math.ceil(contentLines.length * 0.55)) ? 'JUSTIFIED' : 'LEFT';
+    }
+
+    function getPdfBodyLineBaseX(lines) {
+      const candidates = (lines || [])
+        .filter((line, index) => index > 0 || lines.length <= 2)
+        .map((line) => Number(line.x))
+        .filter((value) => Number.isFinite(value));
+      if (!candidates.length) {
+        return Number(lines && lines[0] && lines[0].x) || 0;
+      }
+      candidates.sort((a, b) => a - b);
+      return candidates[0];
+    }
+
+    function getPdfBlockUsableWidth(lines) {
+      let left = Infinity;
+      let right = -Infinity;
+      for (const line of lines || []) {
+        left = Math.min(left, line.x || 0);
+        right = Math.max(right, line.right || 0);
+      }
+      return Number.isFinite(left) && Number.isFinite(right) ? Math.max(right - left, 1) : 1;
     }
 
     function finalizePdfListBlock(lines) {
@@ -2414,13 +2988,39 @@
       return gap > Math.max(fontSize * 0.12, 1);
     }
 
+    function withPdfVisibleTextBounds(item, fontSize) {
+      const leadingIndent = estimatePdfLeadingSpaceWidth(item && item.str, fontSize);
+      if (!leadingIndent) {
+        return item;
+      }
+
+      const width = Number(item.width);
+      const visibleWidth = Number.isFinite(width) && width > leadingIndent
+        ? width - leadingIndent
+        : width;
+
+      return {
+        ...item,
+        x: (Number(item.x) || 0) + leadingIndent,
+        _visibleWidth: visibleWidth,
+      };
+    }
+
+    function estimatePdfLeadingSpaceWidth(text, fontSize) {
+      const match = String(text || '').match(/^(\s+)/);
+      if (!match) return 0;
+
+      const spaces = match[1].replace(/\t/g, '    ').length;
+      return spaces * (Number(fontSize) || 12) * 0.28;
+    }
+
     function normalizePdfText(value) {
       return String(value || '').replace(/\s+/g, ' ').trim();
     }
 
     function getPdfItemRight(item) {
-      const width = Number(item.width);
-      const fallbackWidth = estimatePdfTextWidth(item.str, item.fontSize);
+      const width = Number.isFinite(item && item._visibleWidth) ? Number(item._visibleWidth) : Number(item && item.width);
+      const fallbackWidth = estimatePdfTextWidth(item && item.str, item && item.fontSize);
       return (Number(item.x) || 0) + (Number.isFinite(width) && width > 0 ? width : fallbackWidth);
     }
 

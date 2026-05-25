@@ -2363,9 +2363,11 @@ async function buildTextNode(spec, parentLayoutMode, styleRegistry) {
   const text = figma.createText();
   applyBaseTextProps(text, spec);
   await applyTextStyleIds(text, spec, textRuns, styleRegistry);
+  applyTextParagraphProps(text, spec);
   applyTextRunStyles(text, textRuns);
   applyTextDecorations(text, spec, textRuns);
   applyTextSizing(text, spec, parentLayoutMode);
+  applyTextParagraphProps(text, spec);
   applyChildLayoutSizing(text, spec);
   return text;
 }
@@ -2411,9 +2413,11 @@ async function buildMixedTextGroup(spec, styleRegistry) {
   });
 
   await applyTextStyleIds(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }), baseTextRuns, styleRegistry);
+  applyTextParagraphProps(baseText, spec);
   applyTextRunStyles(baseText, baseTextRuns);
   applyTextDecorations(baseText, spec, baseTextRuns);
   applyTextSizing(baseText, Object.assign({}, spec, { characters: baseCharacters, x: 0, y: 0 }));
+  applyTextParagraphProps(baseText, spec);
   frame.appendChild(baseText);
 
   const outlineRuns = textRuns.filter((run) => run && ((run.strokes && run.strokes.length > 0) || (run.effects && run.effects.length > 0)));
@@ -2459,7 +2463,9 @@ async function buildMixedTextGroup(spec, styleRegistry) {
       effects: run.effects || spec.effects || [],
       opacity: spec.opacity,
     }, [], styleRegistry);
+    applyTextParagraphProps(overlay, spec);
     applyTextSizing(overlay, { width: spec.width, height: spec.height });
+    applyTextParagraphProps(overlay, spec);
     frame.appendChild(overlay);
   }
 
@@ -2489,6 +2495,7 @@ function applyBaseTextProps(text, spec) {
   if (spec.letterSpacing) text.letterSpacing = spec.letterSpacing;
   if (spec.textAlignHorizontal) text.textAlignHorizontal = spec.textAlignHorizontal;
   if (spec.textAlignVertical) text.textAlignVertical = spec.textAlignVertical;
+  applyTextParagraphProps(text, spec);
   if (spec.textCase) text.textCase = spec.textCase;
   applyTextDecorationProps(text, spec);
   if (spec.strokes) {
@@ -2497,6 +2504,16 @@ function applyBaseTextProps(text, spec) {
   }
   if (spec.effects && spec.effects.length > 0) {
     applyFrameEffects(text, spec.effects);
+  }
+}
+
+function applyTextParagraphProps(text, spec) {
+  if (!text || !spec) return;
+  if (spec.paragraphIndent !== undefined) {
+    try { text.paragraphIndent = spec.paragraphIndent; } catch (err) { }
+  }
+  if (spec.paragraphSpacing !== undefined) {
+    try { text.paragraphSpacing = spec.paragraphSpacing; } catch (err) { }
   }
 }
 

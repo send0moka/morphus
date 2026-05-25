@@ -61,6 +61,7 @@ function makeNode(type) {
       this.textStyleId = styleId;
       this.textTruncation = undefined;
       this.maxLines = undefined;
+      this.paragraphIndent = undefined;
       this.textDecoration = 'NONE';
       this.textDecorationStyle = undefined;
       this.textDecorationColor = undefined;
@@ -436,6 +437,39 @@ test('preserves centered multiline text box width outside auto layout', async ()
   expect(title.textAlignHorizontal).toBe('CENTER');
   expect(title.width).toBe(316);
   expect(title.height).toBe(67);
+});
+
+test('applies paragraph indentation and justified alignment from PDF text specs', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      textSpec('pdf paragraph', {
+        characters: 'Indented paragraph text that should keep a justified text box.',
+        width: 420,
+        height: 64,
+        textAlignHorizontal: 'JUSTIFIED',
+        paragraphIndent: 36,
+        _textRole: 'Normal Text',
+      }),
+    ],
+  });
+
+  const paragraph = page.children[0];
+  expect(paragraph.textAlignHorizontal).toBe('JUSTIFIED');
+  expect(paragraph.paragraphIndent).toBe(36);
+  expect(paragraph.textAutoResize).toBe('HEIGHT');
 });
 
 test('keeps explicitly truncated text fixed and enables ending ellipsis', async () => {
