@@ -276,6 +276,10 @@
       gap: 6px;
     }
 
+    .hidden {
+      display: none !important;
+    }
+
     .tab-panel.hidden {
       display: none;
     }
@@ -467,6 +471,103 @@
       gap: 6px;
     }
 
+    .page-range-row {
+      display: grid;
+      gap: 6px;
+    }
+
+    .page-range-toggle {
+      display: flex;
+      gap: 6px;
+    }
+
+    .page-range-toggle .chip {
+      flex: 1;
+      justify-content: center;
+    }
+
+    .page-range-input-wrap {
+      display: grid;
+      gap: 4px;
+    }
+
+    .page-range-hint {
+      font-size: 10px;
+      color: var(--muted);
+      opacity: 0.7;
+    }
+
+    .page-tags-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+      min-height: 36px;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      cursor: text;
+      transition: border-color 0.15s;
+    }
+
+    .page-tags-wrap:focus-within {
+      border-color: var(--accent);
+    }
+
+    .page-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 6px;
+      background: var(--chip-active-bg);
+      color: var(--chip-active-text);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .page-tag-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: inherit;
+      opacity: 0.7;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      font-size: 13px;
+      transition: opacity 0.15s;
+    }
+
+    .page-tag-remove:hover {
+      opacity: 1;
+    }
+
+    .page-tag-input {
+      flex: 1;
+      min-width: 60px;
+      border: none;
+      background: transparent;
+      color: var(--ink);
+      font-size: 11px;
+      outline: none;
+      padding: 0;
+      height: 22px;
+    }
+
+    .page-tag-input::placeholder {
+      color: var(--muted);
+      opacity: 0.6;
+    }
+
     .preset-chips {
       display: flex;
       flex-wrap: wrap;
@@ -502,6 +603,22 @@
 
     .chip svg {
       flex-shrink: 0;
+    }
+
+    .chip:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .field-title-lock {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--muted);
+      opacity: 0.55;
     }
 
     .width-row {
@@ -766,9 +883,36 @@
             <div id="pdfFileMeta" class="file-meta">No file selected.</div>
           </div>
         </div>
+
+        <div class="field">
+          <div class="field-title" id="pageRangeTitle">
+            <span>Page range</span>
+            <span class="field-title-lock" id="pageRangeLock">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Pilih PDF dulu
+            </span>
+          </div>
+          <div class="page-range-row">
+            <div class="page-range-toggle">
+              <button type="button" class="chip active" id="pdfAllPagesBtn" disabled>All pages</button>
+              <button type="button" class="chip" id="pdfCustomRangeBtn" disabled>Page range</button>
+              <button type="button" class="chip" id="pdfSelectPageBtn" disabled>Select page</button>
+            </div>
+            <div class="page-range-input-wrap" id="pdfRangeInputWrap" style="display:none">
+              <input id="pdfRangeInput" type="text" placeholder="e.g. 1-3, 5, 7-9" />
+              <span class="page-range-hint">Pisahkan dengan koma. Contoh: 1-3, 5, 7-9</span>
+            </div>
+            <div class="page-range-input-wrap" id="pdfSelectWrap" style="display:none">
+              <div class="page-tags-wrap" id="pageTagsWrap">
+                <input id="pageTagInput" class="page-tag-input" type="number" min="1" step="1" placeholder="No. halaman, tekan Enter" />
+              </div>
+              <span class="page-range-hint">Ketik nomor halaman lalu tekan Enter untuk menambahkan.</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="viewport-block">
+      <div class="viewport-block" id="viewportBlock">
         <div class="viewport-head">
           <span>Viewport</span>
         </div>
@@ -859,10 +1003,19 @@
     const pdfFilePickerBtn = document.getElementById('pdfFilePickerBtn');
     const pdfFileInput = document.getElementById('pdfFileInput');
     const pdfFileMeta = document.getElementById('pdfFileMeta');
+    const pdfAllPagesBtn = document.getElementById('pdfAllPagesBtn');
+    const pdfCustomRangeBtn = document.getElementById('pdfCustomRangeBtn');
+    const pdfSelectPageBtn = document.getElementById('pdfSelectPageBtn');
+    const pdfRangeInputWrap = document.getElementById('pdfRangeInputWrap');
+    const pdfRangeInput = document.getElementById('pdfRangeInput');
+    const pdfSelectWrap = document.getElementById('pdfSelectWrap');
+    const pageTagsWrap = document.getElementById('pageTagsWrap');
+    const pageTagInput = document.getElementById('pageTagInput');
     const htmlModePanel = document.getElementById('htmlModePanel');
     const pdfModePanel = document.getElementById('pdfModePanel');
     const benchmarkBtn = document.getElementById('benchmarkBtn');
     const allViewportsBtn = document.getElementById('allViewportsBtn');
+    const viewportBlock = document.getElementById('viewportBlock');
     const themeBtn = document.getElementById('themeBtn');
     const themeIcon = document.getElementById('themeIcon');
     const themeLabel = document.getElementById('themeLabel');
@@ -907,6 +1060,9 @@
       },
       selectedFile: null,
       selectedPdfFile: null,
+      pdfPageMode: 'all',
+      pdfPageRange: '',
+      pdfSelectedPages: [],
     };
 
     let currentRealProgress = 0;
@@ -959,6 +1115,62 @@
     filePickerBtn.addEventListener('click', () => {
       fileInput.click();
     });
+
+    function setPdfPageMode(mode) {
+      state.pdfPageMode = mode;
+      pdfAllPagesBtn.classList.toggle('active', mode === 'all');
+      pdfCustomRangeBtn.classList.toggle('active', mode === 'custom');
+      pdfSelectPageBtn.classList.toggle('active', mode === 'select');
+      pdfRangeInputWrap.style.display = mode === 'custom' ? 'grid' : 'none';
+      pdfSelectWrap.style.display = mode === 'select' ? 'grid' : 'none';
+      if (mode === 'custom') pdfRangeInput.focus();
+      if (mode === 'select') pageTagInput.focus();
+      setStatus('');
+    }
+
+    pdfAllPagesBtn.addEventListener('click', () => setPdfPageMode('all'));
+    pdfCustomRangeBtn.addEventListener('click', () => setPdfPageMode('custom'));
+    pdfSelectPageBtn.addEventListener('click', () => setPdfPageMode('select'));
+
+    pdfRangeInput.addEventListener('input', () => {
+      state.pdfPageRange = pdfRangeInput.value.trim();
+    });
+
+    pageTagsWrap.addEventListener('click', () => pageTagInput.focus());
+
+    pageTagInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = parseInt(pageTagInput.value.trim(), 10);
+        if (!val || val < 1) return;
+        if (state.pdfSelectedPages.includes(val)) {
+          pageTagInput.value = '';
+          return;
+        }
+        state.pdfSelectedPages.push(val);
+        state.pdfSelectedPages.sort((a, b) => a - b);
+        renderPageTags();
+        pageTagInput.value = '';
+      } else if (e.key === 'Backspace' && pageTagInput.value === '' && state.pdfSelectedPages.length > 0) {
+        state.pdfSelectedPages.pop();
+        renderPageTags();
+      }
+    });
+
+    function renderPageTags() {
+      const existing = pageTagsWrap.querySelectorAll('.page-tag');
+      existing.forEach(el => el.remove());
+      state.pdfSelectedPages.forEach((num) => {
+        const tag = document.createElement('span');
+        tag.className = 'page-tag';
+        tag.innerHTML = `${num}<button type="button" class="page-tag-remove" aria-label="Hapus halaman ${num}" data-page="${num}">&times;</button>`;
+        tag.querySelector('.page-tag-remove').addEventListener('click', () => {
+          state.pdfSelectedPages = state.pdfSelectedPages.filter(p => p !== num);
+          renderPageTags();
+        });
+        pageTagsWrap.insertBefore(tag, pageTagInput);
+      });
+    }
 
     pdfFilePickerBtn.addEventListener('click', () => {
       pdfFileInput.click();
@@ -1111,6 +1323,7 @@
       if (!file) {
         state.selectedPdfFile = null;
         pdfFileMeta.textContent = 'No file selected.';
+        setPdfPageButtonsEnabled(false);
         return;
       }
 
@@ -1119,19 +1332,52 @@
         pdfFileInput.value = '';
         pdfFileMeta.textContent = 'No file selected.';
         setStatus('Select a .pdf file.', 'error');
+        setPdfPageButtonsEnabled(false);
         return;
       }
 
       state.selectedPdfFile = file;
       pdfFileMeta.textContent = file.name;
       setStatus(`Loaded ${file.name}.`, 'success');
+      setPdfPageButtonsEnabled(true);
     });
+
+    function setPdfPageButtonsEnabled(enabled) {
+      pdfAllPagesBtn.disabled = !enabled;
+      pdfCustomRangeBtn.disabled = !enabled;
+      pdfSelectPageBtn.disabled = !enabled;
+      const lock = document.getElementById('pageRangeLock');
+      if (lock) lock.style.display = enabled ? 'none' : '';
+      if (!enabled) {
+        setPdfPageMode('all');
+      }
+    }
 
     buildBtn.addEventListener('click', () => {
       if (state.sourceMode === 'pdf') {
         if (!state.selectedPdfFile) {
           setStatus('Choose a PDF file first.', 'error');
           return;
+        }
+
+        if (state.pdfPageMode === 'custom') {
+          const rangeStr = pdfRangeInput.value.trim();
+          if (!rangeStr) {
+            setStatus('Masukkan page range atau pilih All pages.', 'error');
+            return;
+          }
+          if (!/^[\d,\- ]+$/.test(rangeStr)) {
+            setStatus('Format page range tidak valid. Contoh: 1-3, 5, 7-9', 'error');
+            return;
+          }
+          state.pdfPageRange = rangeStr;
+        }
+
+        if (state.pdfPageMode === 'select') {
+          if (state.pdfSelectedPages.length === 0) {
+            setStatus('Pilih minimal satu halaman.', 'error');
+            return;
+          }
         }
 
         setStatus('PDF to Figma is not connected yet.', 'error');
@@ -1311,6 +1557,7 @@
 
       htmlModePanel.classList.toggle('hidden', state.sourceMode !== 'html');
       pdfModePanel.classList.toggle('hidden', state.sourceMode !== 'pdf');
+      viewportBlock.classList.toggle('hidden', state.sourceMode === 'pdf');
       renderBuildButtonLabel();
     }
 
