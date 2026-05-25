@@ -165,7 +165,7 @@
       flex: 1;
     }
 
-    
+
     .brand h2 {
       font-size: 14px;
       line-height: 1.2;
@@ -225,6 +225,59 @@
       gap: 6px;
       position: relative;
       box-shadow: 0 10px 24px var(--shadow);
+    }
+
+    .mode-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+    }
+
+    .mode-tab {
+      flex: 1 1 0;
+      min-width: 0;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .mode-tab:hover {
+      color: var(--ink);
+      background: var(--surface-hover);
+    }
+
+    .mode-tab.active {
+      border: 1px solid var(--line);
+      background: var(--file-button-bg);
+      color: var(--ink);
+    }
+
+    .mode-tab svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    .tab-panel {
+      display: grid;
+      gap: 6px;
+    }
+
+    .tab-panel.hidden {
+      display: none;
     }
 
     .field > label,
@@ -300,6 +353,11 @@
       border-color: var(--line-strong);
       background: var(--file-button-bg-hover);
       outline: none;
+    }
+
+    .file-picker:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
     }
 
     .file-picker svg {
@@ -414,7 +472,8 @@
       flex-wrap: wrap;
       gap: 6px;
     }
-    .chip {
+
+    .chip {
       height: 26px;
       display: inline-flex;
       align-items: center;
@@ -617,7 +676,7 @@
         <div class="brand-logo"><span>&lt;/&gt;</span></div>
         <div class="brand-text">
           <h2>Morphus</h2>
-          <p>Paste HTML, build in Figma.</p>
+          <p>Convert designs to Figma.</p>
         </div>
       </div>
       <div class="actions">
@@ -639,30 +698,72 @@
     </div>
 
     <div class="panel">
-      <div class="field">
-        <div class="field-title">HTML file</div>
-        <div class="file-control">
-          <button id="filePickerBtn" class="file-picker" type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <path d="M14 2v6h6" />
-              <path d="M12 18v-6" />
-              <path d="m9 15 3 3 3-3" />
-            </svg>
-            <span>Choose File</span>
-          </button>
-          <input id="fileInput" class="file-input" type="file" accept=".html,.htm,text/html" />
-          <div id="fileMeta" class="file-meta">No file selected.</div>
+      <div class="mode-tabs" role="tablist" aria-label="Conversion mode">
+        <button id="htmlModeTab" class="mode-tab active" type="button" role="tab" aria-selected="true" aria-controls="htmlModePanel" data-source-mode="html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m10 13-2-2 2-2" />
+            <path d="m14 9 2 2-2 2" />
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+          HTML to Figma
+        </button>
+        <button id="pdfModeTab" class="mode-tab" type="button" role="tab" aria-selected="false" aria-controls="pdfModePanel" data-source-mode="pdf">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+            <path d="M14 2v5h5" />
+            <path d="M9 13h1.5a1.5 1.5 0 0 1 0 3H9v-5" />
+            <path d="M14 16v-5h1.3a1.7 1.7 0 0 1 0 5H14" />
+          </svg>
+          PDF to Figma
+        </button>
+      </div>
+
+      <div id="htmlModePanel" class="tab-panel" role="tabpanel" aria-labelledby="htmlModeTab">
+        <div class="field">
+          <div class="field-title">HTML file</div>
+          <div class="file-control">
+            <button id="filePickerBtn" class="file-picker" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M12 18v-6" />
+                <path d="m9 15 3 3 3-3" />
+              </svg>
+              <span>Choose File</span>
+            </button>
+            <input id="fileInput" class="file-input" type="file" accept=".html,.htm,text/html" />
+            <div id="fileMeta" class="file-meta">No file selected.</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="htmlInput">HTML input</label>
+          <div class="editor-wrapper">
+            <div class="editor-line-numbers" id="lineNumbers"></div>
+            <div class="editor-content">
+              <textarea id="htmlInput" wrap="off" placeholder="Paste raw HTML here..." spellcheck="false"></textarea>
+              <pre aria-hidden="true"><code id="highlightCode"></code></pre>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="field">
-        <label for="htmlInput">HTML input</label>
-        <div class="editor-wrapper">
-          <div class="editor-line-numbers" id="lineNumbers"></div>
-          <div class="editor-content">
-            <textarea id="htmlInput" wrap="off" placeholder="Paste raw HTML here..." spellcheck="false"></textarea>
-            <pre aria-hidden="true"><code id="highlightCode"></code></pre>
+      <div id="pdfModePanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="pdfModeTab">
+        <div class="field">
+          <div class="field-title">PDF file</div>
+          <div class="file-control">
+            <button id="pdfFilePickerBtn" class="file-picker" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                <path d="M14 2v5h5" />
+                <path d="M12 18v-6" />
+                <path d="m9 15 3 3 3-3" />
+              </svg>
+              <span>Choose PDF</span>
+            </button>
+            <input id="pdfFileInput" class="file-input" type="file" accept=".pdf,application/pdf" />
+            <div id="pdfFileMeta" class="file-meta">No file selected.</div>
           </div>
         </div>
       </div>
@@ -755,6 +856,11 @@
     const progressFill = document.getElementById('progressFill');
     const statusEl = document.getElementById('status');
     const fileMeta = document.getElementById('fileMeta');
+    const pdfFilePickerBtn = document.getElementById('pdfFilePickerBtn');
+    const pdfFileInput = document.getElementById('pdfFileInput');
+    const pdfFileMeta = document.getElementById('pdfFileMeta');
+    const htmlModePanel = document.getElementById('htmlModePanel');
+    const pdfModePanel = document.getElementById('pdfModePanel');
     const benchmarkBtn = document.getElementById('benchmarkBtn');
     const allViewportsBtn = document.getElementById('allViewportsBtn');
     const themeBtn = document.getElementById('themeBtn');
@@ -767,6 +873,7 @@
     const htmlEl = document.documentElement;
     const sysDark = window.matchMedia('(prefers-color-scheme: dark)');
     const chips = document.querySelectorAll('.chip[data-preset]');
+    const modeTabs = document.querySelectorAll('.mode-tab[data-source-mode]');
     const PRESET_ORDER = ['desktop', 'tablet', 'mobile'];
     const PRESET_LABELS = { desktop: 'Desktop', tablet: 'Tablet', mobile: 'Mobile' };
 
@@ -790,6 +897,7 @@
 
     const state = {
       currentTheme: store.get('morphus-theme') || 'dark',
+      sourceMode: 'html',
       currentPreset: 'desktop',
       selectedPresets: ['desktop'],
       viewportWidths: {
@@ -798,6 +906,7 @@
         mobile: PRESETS.mobile.width,
       },
       selectedFile: null,
+      selectedPdfFile: null,
     };
 
     let currentRealProgress = 0;
@@ -851,6 +960,10 @@
       fileInput.click();
     });
 
+    pdfFilePickerBtn.addEventListener('click', () => {
+      pdfFileInput.click();
+    });
+
     themeBtn.addEventListener('click', () => {
       const index = THEMES.indexOf(state.currentTheme);
       applyTheme(THEMES[(index + 1) % THEMES.length]);
@@ -872,6 +985,14 @@
         state.currentPreset = presetName;
         togglePresetSelection(presetName);
         renderViewportControls();
+        setStatus('');
+      });
+    });
+
+    modeTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        state.sourceMode = tab.dataset.sourceMode || 'html';
+        renderSourceMode();
         setStatus('');
       });
     });
@@ -985,7 +1106,38 @@
       }
     });
 
+    pdfFileInput.addEventListener('change', () => {
+      const file = pdfFileInput.files && pdfFileInput.files[0];
+      if (!file) {
+        state.selectedPdfFile = null;
+        pdfFileMeta.textContent = 'No file selected.';
+        return;
+      }
+
+      if (!isPdfFile(file)) {
+        state.selectedPdfFile = null;
+        pdfFileInput.value = '';
+        pdfFileMeta.textContent = 'No file selected.';
+        setStatus('Select a .pdf file.', 'error');
+        return;
+      }
+
+      state.selectedPdfFile = file;
+      pdfFileMeta.textContent = file.name;
+      setStatus(`Loaded ${file.name}.`, 'success');
+    });
+
     buildBtn.addEventListener('click', () => {
+      if (state.sourceMode === 'pdf') {
+        if (!state.selectedPdfFile) {
+          setStatus('Choose a PDF file first.', 'error');
+          return;
+        }
+
+        setStatus('PDF to Figma is not connected yet.', 'error');
+        return;
+      }
+
       const html = htmlInput.value.trim();
       if (!html) {
         setStatus('Paste HTML or choose a file first.', 'error');
@@ -1066,8 +1218,10 @@
     };
 
     applyTheme(state.currentTheme);
+    renderSourceMode();
     renderViewportControls();
     fileMeta.textContent = 'No file selected.';
+    pdfFileMeta.textContent = 'No file selected.';
     updateEditor();
 
     function applyTheme(theme) {
@@ -1145,7 +1299,28 @@
       }
       widthInput.value = state.viewportWidths[state.currentPreset] || PRESETS[state.currentPreset].width;
       widthLabel.textContent = `${PRESET_LABELS[state.currentPreset]} width`;
+      renderBuildButtonLabel();
+    }
+
+    function renderSourceMode() {
+      modeTabs.forEach((tab) => {
+        const active = tab.dataset.sourceMode === state.sourceMode;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+
+      htmlModePanel.classList.toggle('hidden', state.sourceMode !== 'html');
+      pdfModePanel.classList.toggle('hidden', state.sourceMode !== 'pdf');
+      renderBuildButtonLabel();
+    }
+
+    function renderBuildButtonLabel() {
       const svgIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>';
+      if (state.sourceMode === 'pdf') {
+        buildBtn.innerHTML = `${svgIcon} Convert PDF &amp; Build`;
+        return;
+      }
+
       buildBtn.innerHTML = state.selectedPresets.length > 1
         ? `${svgIcon} Convert &amp; Build (${state.selectedPresets.length})`
         : `${svgIcon} Convert &amp; Build`;
@@ -1168,6 +1343,12 @@
       const hasHtmlExtension = /\.(html?|htm)$/i.test(name);
       const allowedType = !type || type === 'text/html' || type === 'application/xhtml+xml' || type === 'application/octet-stream';
       return hasHtmlExtension && allowedType && !type.startsWith('image/');
+    }
+
+    function isPdfFile(file) {
+      const name = String(file && file.name ? file.name : '').toLowerCase();
+      const type = String(file && file.type ? file.type : '').toLowerCase();
+      return /\.pdf$/i.test(name) && (!type || type === 'application/pdf' || type === 'application/octet-stream');
     }
 
     function looksLikeHtml(value) {

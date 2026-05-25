@@ -11,7 +11,7 @@ const CONVERTER_UNAVAILABLE_MESSAGE = `Morphus Converter is not running. Open Mo
 const WEB_FONT_BUILD_RETRY_LIMIT = 2;
 const WEB_FONT_BUILD_RETRY_DELAY_MS = 3000;
 
-figma.showUI(__html__, { width: 420, height: 505 });
+figma.showUI(__html__, { width: 420, height: 525 });
 startLocalHeartbeat();
 
 const DEFAULT_VIEWPORT = { name: 'desktop', label: 'Desktop', width: 1440, height: 900 };
