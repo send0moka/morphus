@@ -102,8 +102,9 @@
       font-size: 13px;
       color: var(--ink);
       background: var(--bg-gradient);
-      padding: 8px 10px 0;
-      overflow: hidden;
+      padding: 8px 10px;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
 
     button,
@@ -1080,7 +1081,11 @@
       light: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
     };
     const THEME_LABELS = { system: 'System', dark: 'Dark', light: 'Light' };
+    const UI_RESIZE_WIDTH = 420;
+    const UI_MIN_HEIGHT = 260;
+    const UI_MAX_HEIGHT = 720;
 
+    const appShell = document.getElementById('appShell');
     const filePickerBtn = document.getElementById('filePickerBtn');
     const fileInput = document.getElementById('fileInput');
     const htmlInput = document.getElementById('htmlInput');
@@ -1162,6 +1167,86 @@
     let currentRealProgress = 0;
     let currentVisualProgress = 0;
     let progressInterval = null;
+    let resizePending = false;
+    let lastRequestedHeight = 0;
+
+    function setupAutoResize() {
+      if (typeof ResizeObserver !== 'undefined' && appShell) {
+        const resizeObserver = new ResizeObserver(scheduleUiResize);
+        resizeObserver.observe(appShell);
+      }
+
+      if (typeof MutationObserver !== 'undefined' && appShell) {
+        const mutationObserver = new MutationObserver(scheduleUiResize);
+        mutationObserver.observe(appShell, {
+          attributes: true,
+          attributeFilter: ['class', 'style', 'hidden'],
+          childList: true,
+          subtree: true,
+        });
+        mutationObserver.observe(document.body, {
+          attributes: true,
+          attributeFilter: ['class'],
+        });
+      }
+
+      window.addEventListener('resize', scheduleUiResize);
+      window.addEventListener('load', scheduleUiResize);
+
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(scheduleUiResize).catch(() => {});
+      }
+
+      scheduleUiResize();
+    }
+
+    function scheduleUiResize() {
+      if (resizePending) {
+        return;
+      }
+
+      resizePending = true;
+      const scheduleFrame = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (callback) => setTimeout(callback, 0);
+
+      scheduleFrame(() => {
+        resizePending = false;
+        const preferredHeight = measureUiHeight();
+        const height = clampNumber(preferredHeight, UI_MIN_HEIGHT, UI_MAX_HEIGHT);
+        document.body.classList.toggle('plugin-scrollable', preferredHeight > UI_MAX_HEIGHT);
+
+        if (Math.abs(height - lastRequestedHeight) < 2) {
+          return;
+        }
+
+        lastRequestedHeight = height;
+        parent.postMessage({
+          pluginMessage: {
+            type: 'RESIZE_UI',
+            width: UI_RESIZE_WIDTH,
+            height,
+          },
+        }, '*');
+      });
+    }
+
+    function measureUiHeight() {
+      const target = appShell || document.body;
+      const bodyStyle = window.getComputedStyle(document.body);
+      const bottomPadding = Number.parseFloat(bodyStyle.paddingBottom) || 0;
+      const top = target.offsetTop || 0;
+      const height = Math.max(target.offsetHeight || 0, target.scrollHeight || 0);
+      return Math.ceil(top + height + bottomPadding + 1);
+    }
+
+    function clampNumber(value, min, max) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) {
+        return min;
+      }
+      return Math.max(min, Math.min(max, number));
+    }
 
     function startFakeProgress() {
       currentRealProgress = 0;
@@ -1218,8 +1303,9 @@
       pdfRangeInputWrap.style.display = mode === 'custom' ? 'grid' : 'none';
       pdfSelectWrap.style.display = mode === 'select' ? 'grid' : 'none';
       if (mode === 'custom') pdfRangeInput.focus();
-      if (mode === 'select') pageTagInput.focus();
+      if (mode === 'select') pageSelectAllBtn.focus();
       setStatus('');
+      scheduleUiResize();
     }
 
     pdfAllPagesBtn.addEventListener('click', () => setPdfPageMode('all'));
@@ -1303,6 +1389,7 @@
         skel.innerHTML = `<div class="page-card-skeleton-thumb"></div><div class="page-card-skeleton-num"></div>`;
         pagePreviewStrip.appendChild(skel);
       }
+      scheduleUiResize();
 
       // Render each page
       for (let i = 1; i <= numPages; i++) {
@@ -1344,6 +1431,7 @@
         if (skel) pagePreviewStrip.replaceChild(card, skel);
         else pagePreviewStrip.appendChild(card);
       }
+      scheduleUiResize();
     }
 
     pdfFilePickerBtn.addEventListener('click', () => {
@@ -1759,6 +1847,7 @@
     fileMeta.textContent = 'No file selected.';
     pdfFileMeta.textContent = 'No file selected.';
     updateEditor();
+    setupAutoResize();
 
     function applyTheme(theme) {
       state.currentTheme = theme;
@@ -1767,22 +1856,26 @@
       htmlEl.setAttribute('data-theme', isDark ? 'dark' : 'light');
       themeIcon.innerHTML = THEME_ICONS[theme];
       themeLabel.textContent = THEME_LABELS[theme];
+      scheduleUiResize();
     }
 
     function setStatus(message, type = '') {
       statusEl.className = type;
       statusEl.textContent = message || '';
+      scheduleUiResize();
     }
 
     function showConverterDialog(message) {
       document.body.classList.add('converter-offline');
       converterDialog.classList.remove('hidden');
       converterDialogMessage.textContent = message || 'Open Morphus Converter from your computer. If the status page is already open, click Run Converter, then try again.';
+      scheduleUiResize();
     }
 
     function hideConverterDialog() {
       document.body.classList.remove('converter-offline');
       converterDialog.classList.add('hidden');
+      scheduleUiResize();
     }
 
     function openConverterStatusPage() {
@@ -1836,6 +1929,7 @@
       widthInput.value = state.viewportWidths[state.currentPreset] || PRESETS[state.currentPreset].width;
       widthLabel.textContent = `${PRESET_LABELS[state.currentPreset]} width`;
       renderBuildButtonLabel();
+      scheduleUiResize();
     }
 
     function renderSourceMode() {
@@ -1849,6 +1943,7 @@
       pdfModePanel.classList.toggle('hidden', state.sourceMode !== 'pdf');
       viewportBlock.classList.toggle('hidden', state.sourceMode === 'pdf');
       renderBuildButtonLabel();
+      scheduleUiResize();
     }
 
     function renderBuildButtonLabel() {

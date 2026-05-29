@@ -10,14 +10,23 @@ const HEARTBEAT_INTERVAL_MS = 5000;
 const CONVERTER_UNAVAILABLE_MESSAGE = `Morphus Converter is not running. Open Morphus Converter from your computer. If the status page is already open, click Run Converter at ${LOCAL_CONVERTER_URL}.`;
 const WEB_FONT_BUILD_RETRY_LIMIT = 2;
 const WEB_FONT_BUILD_RETRY_DELAY_MS = 3000;
+const UI_WIDTH = 420;
+const UI_DEFAULT_HEIGHT = 440;
+const UI_MIN_HEIGHT = 260;
+const UI_MAX_HEIGHT = 720;
 
-figma.showUI(__html__, { width: 420, height: 525 });
+figma.showUI(__html__, { width: UI_WIDTH, height: UI_DEFAULT_HEIGHT });
 startLocalHeartbeat();
 
 const DEFAULT_VIEWPORT = { name: 'desktop', label: 'Desktop', width: 1440, height: 900 };
 
 figma.ui.onmessage = async (msg) => {
   try {
+    if (msg.type === 'RESIZE_UI') {
+      resizePluginUi(msg.height);
+      return;
+    }
+
     if (msg.type === 'BUILD') {
       await buildFromSnapshotWithWebFontRetry(msg.data, { deferWebFontRetry: true });
       return;
@@ -45,6 +54,23 @@ figma.ui.onmessage = async (msg) => {
     handlePluginError(err);
   }
 };
+
+function resizePluginUi(height) {
+  if (!figma.ui || typeof figma.ui.resize !== 'function') {
+    return;
+  }
+
+  const nextHeight = clampUiDimension(height, UI_MIN_HEIGHT, UI_MAX_HEIGHT, UI_DEFAULT_HEIGHT);
+  figma.ui.resize(UI_WIDTH, nextHeight);
+}
+
+function clampUiDimension(value, min, max, fallback) {
+  const number = Number.parseInt(value, 10);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, number));
+}
 
 function handlePluginError(err) {
   const message = formatErrorForDisplay(err);
