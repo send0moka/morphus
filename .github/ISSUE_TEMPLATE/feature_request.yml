@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a Morphus capability or workflow improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or conversion gap should Morphus solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you want to see.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Figma plugin
+        - HTML extraction
+        - CSS mapping
+        - Font handling
+        - Local companion app
+        - Public deployment
+        - Tests or tooling
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: Link to similar tools, sample HTML/CSS, or screenshots that show the desired result.

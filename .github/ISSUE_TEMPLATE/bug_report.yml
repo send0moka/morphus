@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a Morphus conversion, plugin, or packaging bug.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Share the smallest HTML/CSS sample or steps that reproduce the issue.
+      placeholder: |
+        1. Start the converter with npm run server
+        2. Open the Morphus Figma plugin
+        3. Convert this HTML...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Figma plugin
+        - HTML extraction
+        - CSS mapping
+        - Font handling
+        - Local companion app
+        - Public deployment
+        - Tests or tooling
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser/Chromium channel, Figma app/browser, and Node.js version.
+      placeholder: Windows 11, Microsoft Edge, Figma desktop, Node 20
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant terminal output, plugin messages, screenshots, or generated JSON snippets.
+      render: text
