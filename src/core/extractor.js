@@ -5,9 +5,9 @@
  */
 
 import { chromium } from 'playwright-core';
-import { existsSync, statSync } from 'fs';
+import { existsSync, statSync, readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { createWebFontCollector } from './web-fonts.js';
 
 const DEFAULT_RENDER_TIMEOUT_MS = 120000;
@@ -55,7 +55,258 @@ async function extractFromPage(page) {
   // Walk the full DOM and capture computed styles + rects
   const title = await page.title();
   const domTree = await page.evaluate(walkDOMInBrowser);
+  await hydrateImageResources(domTree);
   return { domTree, title };
+}
+
+async function hydrateImageResources(root) {
+  const cache = new Map();
+  await hydrateElementImages(root, cache);
+  await hydrateCssBackgroundImages(root, cache);
+}
+
+async function hydrateElementImages(root, cache) {
+  const targets = [];
+  walkDomSnapshot(root, (node) => {
+    if (node && node.imageData && node.imageData.src && !isDataUri(node.imageData.src)) {
+      targets.push(node);
+    }
+  });
+
+  for (const target of targets) {
+    const sourceUrl = target.imageData.src;
+    const image = await loadImageSource(sourceUrl, cache);
+    if (!image) {
+      continue;
+    }
+
+    target.imageData = {
+      ...target.imageData,
+      sourceUrl,
+      src: image.src,
+      contentType: image.contentType,
+    };
+  }
+}
+
+async function hydrateCssBackgroundImages(root, cache) {
+  const targets = [];
+  walkDomSnapshot(root, (node) => {
+    if (node && node.computed && hasCssUrlBackground(node.computed.backgroundImage)) {
+      targets.push(node);
+    }
+  });
+
+  for (const target of targets) {
+    const layers = splitCssBackgroundLayers(target.computed.backgroundImage);
+    const backgroundImages = [];
+    for (let index = 0; index < layers.length; index++) {
+      const sourceUrl = extractCssUrl(layers[index]);
+      if (!sourceUrl) {
+        continue;
+      }
+
+      const image = await loadImageSource(sourceUrl, cache);
+      if (!image) {
+        continue;
+      }
+
+      backgroundImages.push({
+        layerIndex: index,
+        sourceUrl,
+        src: image.src,
+        contentType: image.contentType,
+      });
+    }
+
+    if (backgroundImages.length > 0) {
+      target.backgroundImages = backgroundImages;
+    }
+  }
+}
+
+function walkDomSnapshot(node, visit) {
+  if (!node) {
+    return;
+  }
+
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      walkDomSnapshot(child, visit);
+    }
+    return;
+  }
+
+  visit(node);
+
+  if (node.pseudo) {
+    walkDomSnapshot(node.pseudo.before, visit);
+    walkDomSnapshot(node.pseudo.after, visit);
+  }
+
+  for (const child of node.children || []) {
+    walkDomSnapshot(child, visit);
+  }
+}
+
+function hasCssUrlBackground(value) {
+  return /\burl\(/i.test(String(value || ''));
+}
+
+function splitCssBackgroundLayers(css) {
+  const source = String(css || '');
+  const layers = [];
+  let current = '';
+  let depth = 0;
+  let quote = null;
+
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index];
+    if (quote) {
+      current += char;
+      if (char === quote && source[index - 1] !== '\\') {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === '(') {
+      depth++;
+      current += char;
+      continue;
+    }
+
+    if (char === ')') {
+      depth = Math.max(depth - 1, 0);
+      current += char;
+      continue;
+    }
+
+    if (char === ',' && depth === 0) {
+      if (current.trim()) {
+        layers.push(current.trim());
+      }
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim()) {
+    layers.push(current.trim());
+  }
+
+  return layers;
+}
+
+function extractCssUrl(layer) {
+  const source = String(layer || '').trim();
+  const match = source.match(/^url\(([\s\S]*)\)$/i);
+  if (!match) {
+    return null;
+  }
+
+  let value = match[1].trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1);
+  }
+
+  return decodeCssUrl(value);
+}
+
+function decodeCssUrl(value) {
+  return String(value || '')
+    .replace(/\\(["'()\\])/g, '$1')
+    .trim();
+}
+
+function isDataUri(sourceUrl) {
+  return /^data:/i.test(String(sourceUrl || '').trim());
+}
+
+async function loadImageSource(sourceUrl, cache) {
+  if (!sourceUrl) {
+    return null;
+  }
+
+  if (!cache.has(sourceUrl)) {
+    cache.set(sourceUrl, loadImageSourceUncached(sourceUrl).catch(() => null));
+  }
+
+  return cache.get(sourceUrl);
+}
+
+async function loadImageSourceUncached(sourceUrl) {
+  if (isDataUri(sourceUrl)) {
+    return {
+      src: sourceUrl,
+      contentType: getImageMimeType(sourceUrl),
+    };
+  }
+
+  if (/^file:/i.test(sourceUrl)) {
+    const filePath = fileURLToPath(sourceUrl);
+    const buffer = readFileSync(filePath);
+    const contentType = getImageMimeType(sourceUrl);
+    return {
+      src: bufferToDataUri(buffer, contentType),
+      contentType,
+    };
+  }
+
+  if (!/^https?:/i.test(sourceUrl) || typeof fetch !== 'function') {
+    return null;
+  }
+
+  const response = await fetch(sourceUrl, {
+    headers: {
+      'User-Agent': 'Morphus Converter',
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const contentType = getImageMimeType(sourceUrl, response.headers.get('content-type') || '');
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) {
+    return null;
+  }
+
+  return {
+    src: bufferToDataUri(buffer, contentType),
+    contentType,
+  };
+}
+
+function bufferToDataUri(buffer, contentType) {
+  return `data:${contentType || 'application/octet-stream'};base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
+function getImageMimeType(sourceUrl, contentType = '') {
+  const headerType = String(contentType || '').split(';')[0].trim().toLowerCase();
+  if (headerType.startsWith('image/')) {
+    return headerType;
+  }
+
+  const text = String(sourceUrl || '').split('?')[0].split('#')[0].toLowerCase();
+  if (text.startsWith('data:')) {
+    const match = text.match(/^data:([^;,]+)/i);
+    return match ? match[1] : 'application/octet-stream';
+  }
+  if (text.endsWith('.jpg') || text.endsWith('.jpeg')) return 'image/jpeg';
+  if (text.endsWith('.png')) return 'image/png';
+  if (text.endsWith('.gif')) return 'image/gif';
+  if (text.endsWith('.webp')) return 'image/webp';
+  if (text.endsWith('.svg')) return 'image/svg+xml';
+  return 'application/octet-stream';
 }
 
 async function stabilizePage(page) {

@@ -92,7 +92,7 @@ function baseComputed(overrides = {}) {
   };
 }
 
-function frameNode({ tag = 'div', classList = [], rect, computed = {}, children = [], pseudo = { before: null, after: null }, effectiveZ = 0, svgMarkup = null, formControl = null, imageData = null }) {
+function frameNode({ tag = 'div', classList = [], rect, computed = {}, children = [], pseudo = { before: null, after: null }, effectiveZ = 0, svgMarkup = null, formControl = null, imageData = null, backgroundImages = null }) {
   return {
     tag,
     id: null,
@@ -105,6 +105,7 @@ function frameNode({ tag = 'div', classList = [], rect, computed = {}, children 
     ...(formControl ? { formControl } : {}),
     ...(svgMarkup ? { svgMarkup } : {}),
     ...(imageData ? { imageData } : {}),
+    ...(backgroundImages ? { backgroundImages } : {}),
     pseudo,
     children,
     effectiveZ,
@@ -633,6 +634,37 @@ test('maps captured canvas data to image nodes', () => {
   expect(builtCanvas.name).toBe('canvas.chart');
   expect(builtCanvas._image.src).toBe('data:image/png;base64,aGVsbG8=');
   expect(builtCanvas._objectFit).toBe('fill');
+});
+
+test('maps CSS background url layers to image fills', () => {
+  const hero = frameNode({
+    tag: 'section',
+    classList: ['hero'],
+    rect: { x: 0, y: 0, width: 320, height: 180 },
+    computed: {
+      backgroundImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0)), url("data:image/png;base64,aGVsbG8=")',
+      backgroundSize: 'auto, cover',
+      backgroundPosition: '0% 0%, 50% 50%',
+    },
+    backgroundImages: [{
+      layerIndex: 1,
+      src: 'data:image/png;base64,aGVsbG8=',
+      contentType: 'image/png',
+      sourceUrl: 'data:image/png;base64,aGVsbG8=',
+    }],
+  });
+  const body = frameNode({
+    tag: 'body',
+    rect: { x: 0, y: 0, width: 320, height: 180 },
+    children: [hero],
+  });
+
+  const [tree] = buildFigmaTree({ annotated: body });
+  const builtHero = tree.children[0];
+
+  expect(builtHero.fills.map((paint) => paint.type)).toEqual(['GRADIENT_LINEAR', 'IMAGE']);
+  expect(builtHero.fills[1]._image.src).toBe('data:image/png;base64,aGVsbG8=');
+  expect(builtHero.fills[1].scaleMode).toBe('FILL');
 });
 
 test('keeps single media children fixed on the flex main axis', () => {

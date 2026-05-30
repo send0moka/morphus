@@ -1453,6 +1453,45 @@ test('imports base64 image data as a Figma image fill', async () => {
   }]);
 });
 
+test('imports CSS background image fills on frame nodes', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+    Uint8Array,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      frameSpec('section.hero', {
+        width: 320,
+        height: 180,
+        fills: [{
+          type: 'IMAGE',
+          scaleMode: 'FILL',
+          _image: {
+            src: 'data:image/png;base64,aGVsbG8=',
+            sourceUrl: 'data:image/png;base64,aGVsbG8=',
+          },
+        }],
+      }),
+    ],
+  });
+
+  expect(page.children[0].fills).toEqual([{
+    type: 'IMAGE',
+    imageHash: 'image-5',
+    scaleMode: 'FILL',
+  }]);
+});
+
 test('maps css object-fit fill to a valid Figma image scale mode', async () => {
   const { figma, page } = createFigmaMock();
   const context = {

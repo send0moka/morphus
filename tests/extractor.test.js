@@ -725,6 +725,26 @@ test('captures base64 image sources from img elements', async () => {
   expect(image.computed.objectFit).toBe('cover');
 }, 30000);
 
+test('captures CSS background image urls as image data', async () => {
+  const { domTree } = await extractFromHtml(`
+    <div class="hero" style="width: 120px; height: 80px; background-image: linear-gradient(to bottom, rgba(0,0,0,.4), transparent), url('data:image/png;base64,aGVsbG8='); background-size: auto, cover;"></div>
+  `, {
+    width: 160,
+    height: 120,
+  });
+
+  const hero = find(domTree, (node) => node.classList?.includes('hero'));
+
+  expect(hero).toBeTruthy();
+  expect(hero.backgroundImages).toEqual([
+    expect.objectContaining({
+      layerIndex: 1,
+      src: 'data:image/png;base64,aGVsbG8=',
+      contentType: 'image/png',
+    }),
+  ]);
+}, 30000);
+
 test('captures rendered canvas content as image data', async () => {
   const { domTree } = await extractFromHtml(`
     <canvas class="chart" width="120" height="80" style="width: 120px; height: 80px;"></canvas>

@@ -8,8 +8,8 @@ const DEFAULT_CONVERTER_URL = LOCAL_CONVERTER_URL;
 const BENCHMARK_URL = 'https://figmaeval.vercel.app';
 const HEARTBEAT_INTERVAL_MS = 5000;
 const CONVERTER_UNAVAILABLE_MESSAGE = `Morphus Converter is not running. Open Morphus Converter from your computer. If the status page is already open, click Run Converter at ${LOCAL_CONVERTER_URL}.`;
-const WEB_FONT_BUILD_RETRY_LIMIT = 2;
-const WEB_FONT_BUILD_RETRY_DELAY_MS = 3000;
+const WEB_FONT_BUILD_RETRY_LIMIT = 6;
+const WEB_FONT_BUILD_RETRY_DELAY_MS = 5000;
 const UI_WIDTH = 420;
 const UI_DEFAULT_HEIGHT = 440;
 const UI_MIN_HEIGHT = 260;
@@ -557,8 +557,9 @@ function isValidCodePoint(number) {
 // Font pre-loading
 
 const loadedFontPromises = {};
-const WEB_FONT_READY_TIMEOUT_MS = 45000;
+const WEB_FONT_READY_TIMEOUT_MS = 30000;
 const WEB_FONT_READY_POLL_MS = 500;
+const WEB_FONT_READY_PROGRESS_MS = 5000;
 
 async function preloadFonts(nodes, webFontMeta, options = {}) {
   const fallback = { family: 'Inter', style: 'Regular' };
@@ -623,6 +624,7 @@ async function waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, initialA
 
   const startedAt = Date.now();
   const timeoutMs = getWebFontReadyTimeoutMs(options);
+  let lastProgressAt = 0;
   let availableByFamily = initialAvailableByFamily || {};
 
   while (Date.now() - startedAt <= timeoutMs) {
@@ -635,6 +637,16 @@ async function waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, initialA
 
     if (!missing.length) {
       return availableByFamily;
+    }
+
+    const now = Date.now();
+    if (now - lastProgressAt >= WEB_FONT_READY_PROGRESS_MS) {
+      lastProgressAt = now;
+      reportProgress(
+        options,
+        `Figma is refreshing local fonts: ${formatFontList(missing, 3)}. Keep Morphus open; it will build automatically.`,
+        92
+      );
     }
 
     await sleep(WEB_FONT_READY_POLL_MS);
@@ -742,9 +754,8 @@ function throwIfWebFontsAreNotReady(fontSummary) {
     return;
   }
 
-  const shown = unavailable.slice(0, 4).map(formatFontName).join(', ');
-  const extra = unavailable.length > 4 ? ` +${unavailable.length - 4} more` : '';
-  const error = new Error(`Morphus installed web fonts, but Figma has not refreshed them yet after waiting: ${shown}${extra}. Reload or restart Figma, then run Convert and Build again. No fallback frame was created.`);
+  const shown = formatFontList(unavailable, 4);
+  const error = new Error(`Morphus installed web fonts, but Figma has not refreshed them yet after waiting: ${shown}. Reload or restart Figma, then run Convert and Build again. No fallback frame was created.`);
   error.morphusCode = 'WEB_FONTS_NOT_READY';
   throw error;
 }
@@ -890,6 +901,14 @@ function formatFontName(font) {
     return 'Unknown font';
   }
   return `${normalized.family} ${normalized.style || 'Regular'}`;
+}
+
+function formatFontList(fonts, limit) {
+  const source = Array.isArray(fonts) ? fonts : [];
+  const safeLimit = Math.max(1, limit || 4);
+  const shown = source.slice(0, safeLimit).map(formatFontName).join(', ');
+  const extra = source.length > safeLimit ? ` +${source.length - safeLimit} more` : '';
+  return `${shown}${extra}`;
 }
 
 async function listAvailableFontsByFamily() {
@@ -2156,7 +2175,7 @@ async function buildImageNode(spec, parentLayoutMode, styleRegistry) {
   if (imagePaint) {
     frame.fills = [imagePaint];
   } else if (spec.fills && spec.fills.length > 0) {
-    frame.fills = spec.fills;
+    frame.fills = materializePaintList(spec.fills);
   }
 
   if (spec.opacity !== undefined) frame.opacity = spec.opacity;
@@ -2215,14 +2234,48 @@ function createImageFillPaint(spec) {
       imageHashBySource[src] = imageHash;
     }
 
-    return {
+    const paint = {
       type: 'IMAGE',
       imageHash,
-      scaleMode: mapObjectFitToImageScaleMode(spec._objectFit),
+      scaleMode: normalizeImageScaleMode(spec.scaleMode) || mapObjectFitToImageScaleMode(spec._objectFit),
     };
+    if (spec.opacity !== undefined) {
+      paint.opacity = spec.opacity;
+    }
+    if (spec.visible !== undefined) {
+      paint.visible = spec.visible;
+    }
+    return paint;
   } catch (err) {
     return null;
   }
+}
+
+function materializePaintList(paints) {
+  if (!Array.isArray(paints)) {
+    return [];
+  }
+
+  const result = [];
+  for (let index = 0; index < paints.length; index++) {
+    const paint = materializePaint(paints[index]);
+    if (paint) {
+      result.push(paint);
+    }
+  }
+  return result;
+}
+
+function materializePaint(paint) {
+  if (!paint) {
+    return null;
+  }
+
+  if (paint.type === 'IMAGE' && paint._image) {
+    return createImageFillPaint(paint);
+  }
+
+  return paint;
 }
 
 function decodeImageBytes(src) {
@@ -2307,6 +2360,14 @@ function mapObjectFitToImageScaleMode(objectFit) {
     return 'FILL';
   }
   return 'FILL';
+}
+
+function normalizeImageScaleMode(value) {
+  const mode = String(value || '').toUpperCase();
+  if (mode === 'FILL' || mode === 'FIT' || mode === 'CROP' || mode === 'TILE') {
+    return mode;
+  }
+  return null;
 }
 
 async function buildSvgNode(spec, parentLayoutMode, styleRegistry) {
@@ -2822,7 +2883,7 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
     } catch (err) { }
   }
 
-  if (spec.fills && spec.fills.length > 0) frame.fills = spec.fills;
+  if (spec.fills && spec.fills.length > 0) frame.fills = materializePaintList(spec.fills);
   else frame.fills = [];
 
   if (spec.opacity !== undefined) frame.opacity = spec.opacity;

@@ -19,7 +19,7 @@ import {
   mapTypography,
   mapTextStroke,
   shouldTruncateText,
-  parseGradientLayers,
+  parseGradientLayer,
   splitCssLayers,
 } from './css-to-figma.js';
 import { cssColorToFigma, solidPaint as colorSolidPaint } from '../utils/color.js';
@@ -39,7 +39,7 @@ export function buildFigmaTree({ annotated }, { pseudoElements = [], gridStrateg
 }
 
 function buildNode(node, parentContext, ctx, path) {
-  const { computed, rect, tag, text, textRuns = [], children = [], classList, isTextContainer, _pageLayout, _role, svgMarkup, imageData } = node;
+  const { computed, rect, tag, text, textRuns = [], children = [], classList, isTextContainer, _pageLayout, _role, svgMarkup, imageData, backgroundImages = [] } = node;
 
   let liIndex;
   if (tag === 'li' && parentContext?.sourceNode?.children) {
@@ -229,7 +229,7 @@ function buildNode(node, parentContext, ctx, path) {
   // Handle supported CSS gradient layers in backgroundImage.
   if (!backgroundPattern && computed.backgroundImage) {
     try {
-      fills.push(...parseGradientLayers(computed.backgroundImage, rect));
+      fills.push(...mapBackgroundImageLayers(computed, rect, backgroundImages));
     } catch { /* skip malformed gradients */ }
   }
 
@@ -848,12 +848,76 @@ function buildPseudoBackgrounds(computed, fallbackFillColor, rect = null) {
 
   const fills = mapBackgroundColor(computed);
   if (computed.backgroundImage) {
-    fills.push(...parseGradientLayers(computed.backgroundImage, rect));
+    fills.push(...mapBackgroundImageLayers(computed, rect, rect?.backgroundImages || []));
   }
 
   // A pseudo box inherits `color` from its parent, but that text color is not a
   // background paint. Unsupported decorative backgrounds should stay transparent.
   return fills;
+}
+
+function mapBackgroundImageLayers(computed, rect = null, backgroundImages = []) {
+  const layers = splitCssLayers(computed?.backgroundImage || '');
+  if (!layers.length) {
+    return [];
+  }
+
+  const imageByLayerIndex = new Map();
+  for (const image of backgroundImages || []) {
+    if (image && Number.isFinite(image.layerIndex)) {
+      imageByLayerIndex.set(image.layerIndex, image);
+    }
+  }
+
+  const paints = [];
+  for (let index = 0; index < layers.length; index++) {
+    const image = imageByLayerIndex.get(index);
+    if (image) {
+      paints.push(createBackgroundImagePaint(image, computed, index));
+      continue;
+    }
+
+    const gradient = parseGradientLayer(layers[index], rect);
+    if (gradient) {
+      paints.push(gradient);
+    }
+  }
+
+  return paints.filter(Boolean);
+}
+
+function createBackgroundImagePaint(image, computed, layerIndex) {
+  if (!image || !image.src) {
+    return null;
+  }
+
+  return {
+    type: 'IMAGE',
+    _image: {
+      src: image.src,
+      sourceUrl: image.sourceUrl || '',
+      contentType: image.contentType || '',
+    },
+    scaleMode: mapBackgroundSizeToImageScaleMode(
+      getCssLayerValue(computed?.backgroundSize, layerIndex, 'auto')
+    ),
+  };
+}
+
+function getCssLayerValue(value, index, fallback = '') {
+  const values = splitCssLayers(value || '');
+  if (!values.length) {
+    return fallback;
+  }
+  return values[Math.min(index, values.length - 1)] || values[0] || fallback;
+}
+
+function mapBackgroundSizeToImageScaleMode(value) {
+  const size = String(value || '').toLowerCase();
+  if (size.includes('contain')) {
+    return 'FIT';
+  }
+  return 'FILL';
 }
 
 function buildMergedPseudoBackgrounds(pseudo) {
