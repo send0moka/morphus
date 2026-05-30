@@ -107,6 +107,7 @@ Useful docs:
 - [CSS to Figma mapping](docs/css-figma-mapping.md)
 - [Deployment](docs/deployment.md)
 - [Local companion packaging](docs/local-companion.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 Before opening a PR, run the focused test suite for the area you changed, or run the full suite:
 
