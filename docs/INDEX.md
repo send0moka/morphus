@@ -5,6 +5,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 ## Core Concepts
 
 - [Architecture](architecture.md)
+- [Background image handling](background-images.md)
 - [Converter API](converter-api.md)
 - [CSS to Figma mapping](css-figma-mapping.md)
 - [Conversion job lifecycle](job-lifecycle.md)
