@@ -109,6 +109,7 @@ Useful docs:
 - [Development workflow](docs/development-workflow.md)
 - [Deployment](docs/deployment.md)
 - [Environment variables](docs/environment.md)
+- [Fixture authoring](docs/fixture-authoring.md)
 - [Local companion packaging](docs/local-companion.md)
 - [Release checklist](docs/release-checklist.md)
 - [Testing guide](docs/testing.md)
