@@ -22,6 +22,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 - [Deployment](deployment.md)
 - [Environment variables](environment.md)
+- [Local companion lifecycle](local-companion-lifecycle.md)
 - [Local companion packaging](local-companion.md)
 - [Privacy and security](privacy-security.md)
 - [Release checklist](release-checklist.md)
