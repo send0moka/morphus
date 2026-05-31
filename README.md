@@ -108,6 +108,7 @@ Useful docs:
 - [CSS to Figma mapping](docs/css-figma-mapping.md)
 - [Development workflow](docs/development-workflow.md)
 - [Deployment](docs/deployment.md)
+- [Environment variables](docs/environment.md)
 - [Local companion packaging](docs/local-companion.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
