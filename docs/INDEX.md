@@ -44,6 +44,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Feature flags](feature-flags.md)
 - [Local companion lifecycle](local-companion-lifecycle.md)
 - [Local companion packaging](local-companion.md)
+- [OS packaging guide](os-packaging.md)
 - [Paint style generation](paint-styles.md)
 - [Privacy and security](privacy-security.md)
 - [Rate limiting](rate-limiting.md)
