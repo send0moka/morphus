@@ -14,6 +14,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 ## Development
 
+- [Benchmarks](benchmarks.md)
 - [Development workflow](development-workflow.md)
 - [Error handling](error-handling.md)
 - [Fixture authoring](fixture-authoring.md)
