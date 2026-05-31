@@ -27,6 +27,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Environment variables](environment.md)
 - [Local companion lifecycle](local-companion-lifecycle.md)
 - [Local companion packaging](local-companion.md)
+- [Paint style generation](paint-styles.md)
 - [Privacy and security](privacy-security.md)
 - [Release checklist](release-checklist.md)
 - [SVG handling](svg-handling.md)
