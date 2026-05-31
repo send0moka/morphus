@@ -29,6 +29,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 ## Operations
 
+- [CI pipeline](ci-pipeline.md)
 - [Deployment](deployment.md)
 - [Docker guide](docker.md)
 - [Environment variables](environment.md)
