@@ -15,6 +15,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 - [Development workflow](development-workflow.md)
 - [Fixture authoring](fixture-authoring.md)
+- [Font handling](font-handling.md)
 - [Testing guide](testing.md)
 - [Troubleshooting](troubleshooting.md)
 
