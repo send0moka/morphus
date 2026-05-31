@@ -7,6 +7,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Architecture](architecture.md)
 - [Converter API](converter-api.md)
 - [CSS to Figma mapping](css-figma-mapping.md)
+- [Conversion job lifecycle](job-lifecycle.md)
 - [Plugin message protocol](plugin-message-protocol.md)
 - [Project checklist](CHECKLIST.md)
 
