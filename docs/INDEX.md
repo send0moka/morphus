@@ -42,6 +42,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Docker guide](docker.md)
 - [Environment variables](environment.md)
 - [Feature flags](feature-flags.md)
+- [Homebrew formula](homebrew.md)
 - [Local companion lifecycle](local-companion-lifecycle.md)
 - [Local companion packaging](local-companion.md)
 - [OS packaging guide](os-packaging.md)
