@@ -30,6 +30,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Privacy and security](privacy-security.md)
 - [Release checklist](release-checklist.md)
 - [SVG handling](svg-handling.md)
+- [Text style generation](text-styles.md)
 
 ## Internal Context
 
