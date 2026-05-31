@@ -18,6 +18,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Fixture authoring](fixture-authoring.md)
 - [Font handling](font-handling.md)
 - [Image handling](image-handling.md)
+- [Layout mapping](layout-mapping.md)
 - [Testing guide](testing.md)
 - [Troubleshooting](troubleshooting.md)
 
