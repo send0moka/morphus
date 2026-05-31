@@ -28,6 +28,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 ## Operations
 
 - [Deployment](deployment.md)
+- [Docker guide](docker.md)
 - [Environment variables](environment.md)
 - [Local companion lifecycle](local-companion-lifecycle.md)
 - [Local companion packaging](local-companion.md)
