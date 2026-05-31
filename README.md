@@ -110,6 +110,7 @@ Useful docs:
 - [Deployment](docs/deployment.md)
 - [Environment variables](docs/environment.md)
 - [Local companion packaging](docs/local-companion.md)
+- [Release checklist](docs/release-checklist.md)
 - [Testing guide](docs/testing.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
