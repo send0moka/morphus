@@ -42,6 +42,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Local companion packaging](local-companion.md)
 - [Paint style generation](paint-styles.md)
 - [Privacy and security](privacy-security.md)
+- [Rate limiting](rate-limiting.md)
 - [Release checklist](release-checklist.md)
 - [Security model](security-model.md)
 - [Stacking order](stacking-order.md)
