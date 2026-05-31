@@ -17,6 +17,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 - [Benchmarks](benchmarks.md)
 - [Code style guide](code-style.md)
+- [Debugging tips](debugging.md)
 - [Development workflow](development-workflow.md)
 - [Error handling](error-handling.md)
 - [Fixture authoring](fixture-authoring.md)
