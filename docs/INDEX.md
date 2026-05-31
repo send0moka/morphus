@@ -28,6 +28,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Local companion packaging](local-companion.md)
 - [Privacy and security](privacy-security.md)
 - [Release checklist](release-checklist.md)
+- [SVG handling](svg-handling.md)
 
 ## Internal Context
 
