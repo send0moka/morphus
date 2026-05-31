@@ -25,6 +25,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 - [Image handling](image-handling.md)
 - [Grid layout mapping](grid-layout.md)
 - [Layout mapping](layout-mapping.md)
+- [Logging guide](logging.md)
 - [Testing guide](testing.md)
 - [Troubleshooting](troubleshooting.md)
 
