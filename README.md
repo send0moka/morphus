@@ -111,6 +111,7 @@ Useful docs:
 - [Environment variables](docs/environment.md)
 - [Fixture authoring](docs/fixture-authoring.md)
 - [Local companion packaging](docs/local-companion.md)
+- [Privacy and security](docs/privacy-security.md)
 - [Release checklist](docs/release-checklist.md)
 - [Testing guide](docs/testing.md)
 - [Troubleshooting](docs/troubleshooting.md)
