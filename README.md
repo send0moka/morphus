@@ -103,6 +103,7 @@ For office/internal rollout, package Morphus Converter so each user runs the con
 
 Useful docs:
 
+- [Documentation index](docs/INDEX.md)
 - [Architecture](docs/architecture.md)
 - [Converter API](docs/converter-api.md)
 - [CSS to Figma mapping](docs/css-figma-mapping.md)
