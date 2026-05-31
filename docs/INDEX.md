@@ -29,6 +29,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 ## Operations
 
+- [Changelog conventions](changelog-conventions.md)
 - [CI pipeline](ci-pipeline.md)
 - [Deployment](deployment.md)
 - [Docker guide](docker.md)
