@@ -32,6 +32,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 ## Operations
 
+- [Caching strategy](caching.md)
 - [Changelog conventions](changelog-conventions.md)
 - [CI pipeline](ci-pipeline.md)
 - [Deployment](deployment.md)
