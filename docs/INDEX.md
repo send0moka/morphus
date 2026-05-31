@@ -4,6 +4,7 @@ Use this page as the starting point for Morphus development, deployment, testing
 
 ## Core Concepts
 
+- [Accessibility notes](accessibility.md)
 - [Architecture](architecture.md)
 - [Background image handling](background-images.md)
 - [Converter API](converter-api.md)
