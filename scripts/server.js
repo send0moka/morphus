@@ -75,16 +75,35 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && path === '/open-font-folder-and-close-figma') {
-    const base = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
-    const fontDir = process.env.MORPHUS_WINDOWS_FONT_DIR || join(base, 'Microsoft', 'Windows', 'Fonts');
-    try {
-      spawn('explorer.exe', [fontDir], { detached: true, stdio: 'ignore' }).unref();
-    } catch (err) { }
+    let fontDir = '';
+    if (process.platform === 'win32') {
+      const base = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
+      fontDir = process.env.MORPHUS_WINDOWS_FONT_DIR || join(base, 'Microsoft', 'Windows', 'Fonts');
+      try {
+        spawn('explorer.exe', [fontDir], { detached: true, stdio: 'ignore' }).unref();
+      } catch (err) { }
+    } else if (process.platform === 'darwin') {
+      fontDir = process.env.MORPHUS_MACOS_FONT_DIR || join(homedir(), 'Library', 'Fonts');
+      try {
+        spawn('open', [fontDir], { detached: true, stdio: 'ignore' }).unref();
+      } catch (err) { }
+    } else {
+      fontDir = join(homedir(), '.fonts');
+      try {
+        spawn('xdg-open', [fontDir], { detached: true, stdio: 'ignore' }).unref();
+      } catch (err) { }
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, fontDir }));
+
     setTimeout(() => {
       try {
-        spawn('taskkill', ['/IM', 'Figma.exe', '/F'], { detached: true, stdio: 'ignore' }).unref();
+        if (process.platform === 'win32') {
+          spawn('taskkill', ['/IM', 'Figma.exe', '/F'], { detached: true, stdio: 'ignore' }).unref();
+        } else if (process.platform === 'darwin') {
+          spawn('killall', ['Figma'], { detached: true, stdio: 'ignore' }).unref();
+        }
       } catch (err) { }
     }, 500);
     return;
