@@ -6,6 +6,9 @@
 
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { execSync, spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { convertHtmlString } from '../src/pipeline/convert.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? process.env.MORPHUS_PORT ?? '3210', 10);
@@ -68,6 +71,39 @@ const server = http.createServer(async (req, res) => {
       running: true,
       message: 'Morphus Converter is running.',
     }));
+    return;
+  }
+
+  if (req.method === 'POST' && path === '/open-font-folder-and-close-figma') {
+    const base = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
+    const fontDir = process.env.MORPHUS_WINDOWS_FONT_DIR || join(base, 'Microsoft', 'Windows', 'Fonts');
+    try {
+      spawn('explorer.exe', [fontDir], { detached: true, stdio: 'ignore' }).unref();
+    } catch (err) { }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, fontDir }));
+    setTimeout(() => {
+      try {
+        spawn('taskkill', ['/IM', 'Figma.exe', '/F'], { detached: true, stdio: 'ignore' }).unref();
+      } catch (err) { }
+    }, 500);
+    return;
+  }
+
+  if (req.method === 'POST' && path === '/debug-fonts') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        import('node:fs').then((fs) => {
+          fs.writeFileSync(join('c:\\Users\\Jehian\\Documents\\tempelhtml', 'debug_fonts_received.json'), body);
+        });
+      } catch (err) {
+        console.error('[DEBUG-FONTS] Error writing debug fonts file:', err);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    });
     return;
   }
 

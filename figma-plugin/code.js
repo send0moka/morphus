@@ -20,6 +20,10 @@ startLocalHeartbeat();
 
 const DEFAULT_VIEWPORT = { name: 'desktop', label: 'Desktop', width: 1440, height: 900 };
 
+let lastFailedData = null;
+let lastFailedOptions = null;
+let lastMissingFontsList = [];
+
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'RESIZE_UI') {
@@ -50,6 +54,35 @@ figma.ui.onmessage = async (msg) => {
     if (msg.type === 'CONVERT_PDF_AND_BUILD') {
       await convertPdfAndBuild(msg.payload);
     }
+
+    if (msg.type === 'OPEN_FONT_FOLDER') {
+      try {
+        await fetch(`${LOCAL_CONVERTER_URL}/open-font-folder-and-close-figma`, { method: 'POST' });
+      } catch (err) { }
+      return;
+    }
+
+    if (msg.type === 'REPLACE_MISSING_FONTS') {
+      const replacementFamily = msg.replacementFamily || 'Inter';
+      if (lastFailedData) {
+        const missingFamilies = {};
+        for (let i = 0; i < lastMissingFontsList.length; i++) {
+          const font = lastMissingFontsList[i];
+          if (font && font.family) {
+            missingFamilies[normalizeFontFamilyKey(font.family)] = true;
+          }
+        }
+        replaceFontsInTree(lastFailedData.figmaTree, missingFamilies, replacementFamily);
+        lastFailedData.missingFonts = [];
+        await buildFromSnapshotWithWebFontRetry(lastFailedData, lastFailedOptions);
+      }
+      return;
+    }
+
+    if (msg.type === 'CLOSE_PLUGIN') {
+      figma.closePlugin();
+      return;
+    }
   } catch (err) {
     handlePluginError(err);
   }
@@ -72,7 +105,34 @@ function clampUiDimension(value, min, max, fallback) {
   return Math.max(min, Math.min(max, number));
 }
 
-function handlePluginError(err) {
+async function getUniqueAvailableFontFamilies() {
+  try {
+    const fonts = await figma.listAvailableFontsAsync();
+    const familiesSet = {};
+    for (let i = 0; i < fonts.length; i++) {
+      const f = fonts[i];
+      const name = (f.fontName && f.fontName.family) || (f && f.family);
+      if (name) {
+        familiesSet[name] = true;
+      }
+    }
+    const familiesList = Object.keys(familiesSet);
+    familiesList.sort();
+    return familiesList;
+  } catch (err) {
+    return ['Inter', 'Roboto', 'Arial'];
+  }
+}
+
+async function handlePluginError(err) {
+  if (isWebFontsNotReadyError(err)) {
+    const fonts = (err.missingFonts || []).map(function (font) {
+      return { family: font.family, style: font.style };
+    });
+    const families = await getUniqueAvailableFontFamilies();
+    figma.ui.postMessage({ type: 'MISSING_FONTS', fonts: fonts, availableFamilies: families });
+    return;
+  }
   const message = formatErrorForDisplay(err);
   figma.ui.postMessage({ type: isConverterUnavailableError(err) ? 'CONVERTER_UNAVAILABLE' : 'ERROR', message });
   console.error('[Morphus]', message, err && err.stack ? err.stack : err);
@@ -426,12 +486,48 @@ async function buildFromSnapshot(data, options = {}) {
     reportProgress(options, `Warning: ${warning}`);
   }
 
+
   await ensureCurrentPageLoaded();
 
   const webFontMeta = data.meta && data.meta.webFonts;
   reportProgress(options, hasWebFontsForPreload(webFontMeta) ? 'Waiting for web fonts...' : 'Pre-loading fonts...', 91);
   const fontSummary = await preloadFonts(figmaTree, webFontMeta, options);
-  throwIfWebFontsAreNotReady(fontSummary);
+
+  // Combine converter-side missingFonts and Figma-side unavailableWebFonts
+  const missingFonts = data.missingFonts || [];
+  const unavailableWebFonts = fontSummary && Array.isArray(fontSummary.unavailableWebFonts) ? fontSummary.unavailableWebFonts : [];
+
+  const allMissingFonts = [];
+  const seenMissing = {};
+
+  const addMissing = (f) => {
+    if (!f || !f.family) return;
+    const key = `${normalizeFontFamilyKey(f.family)}|||${normalizeFontStyleKey(f.style)}`;
+    if (!seenMissing[key]) {
+      seenMissing[key] = true;
+      allMissingFonts.push({ family: f.family, style: f.style || 'Regular' });
+    }
+  };
+
+  for (let i = 0; i < missingFonts.length; i++) {
+    addMissing(missingFonts[i]);
+  }
+  for (let i = 0; i < unavailableWebFonts.length; i++) {
+    addMissing(unavailableWebFonts[i]);
+  }
+
+  if (allMissingFonts.length > 0) {
+    lastFailedData = data;
+    lastFailedOptions = options;
+    lastMissingFontsList = allMissingFonts;
+
+    const shown = formatFontList(allMissingFonts, 4);
+    const error = new Error(`Morphus installed web fonts, but Figma has not refreshed them yet after waiting: ${shown}. Reload or restart Figma, then run Convert and Build again. No fallback frame was created.`);
+    error.morphusCode = 'WEB_FONTS_NOT_READY';
+    error.missingFonts = allMissingFonts;
+    throw error;
+  }
+
   reportFontFallbacks(fontSummary, options, webFontMeta);
 
   reportProgress(options, 'Creating local styles...', 94);
@@ -575,6 +671,28 @@ async function preloadFonts(nodes, webFontMeta, options = {}) {
 
   const keys = Object.keys(requestsByKey);
   let availableByFamily = await listAvailableFontsByFamily();
+
+  // DEBUG FONTS POST TO LOCAL SERVER
+  try {
+    const allAvailableFonts = await figma.listAvailableFontsAsync();
+    const filteredAvailable = allAvailableFonts.filter(f => {
+      const name = (f.fontName && f.fontName.family) || (f && f.family) || '';
+      return name.toLowerCase().includes('neul') || name.toLowerCase().includes('gelica');
+    }).map(f => f.fontName || f);
+
+    const debugData = {
+      requested: Object.values(requestsByKey),
+      availableInFigmaFiltered: filteredAvailable,
+      webFontMeta: webFontMeta
+    };
+
+    fetch(`${LOCAL_CONVERTER_URL}/debug-fonts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(debugData)
+    }).catch(() => {});
+  } catch (err) { }
+
   availableByFamily = await waitForWebFontsToBecomeReady(requestsByKey, webFontMeta, availableByFamily, options);
 
   await Promise.all(keys.map((key) => {
@@ -757,6 +875,7 @@ function throwIfWebFontsAreNotReady(fontSummary) {
   const shown = formatFontList(unavailable, 4);
   const error = new Error(`Morphus installed web fonts, but Figma has not refreshed them yet after waiting: ${shown}. Reload or restart Figma, then run Convert and Build again. No fallback frame was created.`);
   error.morphusCode = 'WEB_FONTS_NOT_READY';
+  error.missingFonts = unavailable;
   throw error;
 }
 
@@ -844,6 +963,37 @@ function collectFontRequests(node, requestsByKey, fallback) {
   const children = node.children || [];
   for (let index = 0; index < children.length; index++) {
     collectFontRequests(children[index], requestsByKey, fallback);
+  }
+}
+
+function replaceFontsInTree(nodes, missingFamilies, replacementFamily) {
+  if (!nodes || !Array.isArray(nodes)) {
+    return;
+  }
+
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index];
+    if (!node) {
+      continue;
+    }
+
+    if (node.fontName && node.fontName.family) {
+      if (missingFamilies[normalizeFontFamilyKey(node.fontName.family)]) {
+        node.fontName.family = replacementFamily;
+      }
+    }
+
+    const textRuns = node.textRuns || [];
+    for (let j = 0; j < textRuns.length; j++) {
+      if (textRuns[j] && textRuns[j].fontName && textRuns[j].fontName.family) {
+        if (missingFamilies[normalizeFontFamilyKey(textRuns[j].fontName.family)]) {
+          textRuns[j].fontName.family = replacementFamily;
+        }
+      }
+    }
+
+    const children = node.children || [];
+    replaceFontsInTree(children, missingFamilies, replacementFamily);
   }
 }
 

@@ -876,6 +876,237 @@
       background: var(--file-button-bg);
       color: var(--ink);
     }
+
+    .missing-font-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(0, 0, 0, 0.54);
+    }
+
+    .missing-font-overlay.hidden {
+      display: none;
+    }
+
+    .missing-font-card {
+      width: 100%;
+      max-width: 370px;
+      border-radius: 10px;
+      border: 1px solid var(--line-strong);
+      background: var(--panel);
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .missing-font-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .missing-font-icon {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(to top, #c43e00 0%, #ff6b2b 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    .missing-font-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .missing-font-header h3 {
+      font-size: 14px;
+      line-height: 1.25;
+      color: var(--ink);
+      letter-spacing: 0;
+      margin-top: 2px;
+    }
+
+    .missing-font-card > p {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .missing-font-list {
+      list-style: none;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--field);
+      display: grid;
+      gap: 4px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .missing-font-list li {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .missing-font-list li::before {
+      content: '';
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .missing-font-btn {
+      width: 100%;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(to top, #bd0e16 0%, #dd242a 100%) padding-box,
+                  linear-gradient(to top, #ea0c12 0%, #f15457 100%) border-box;
+      border: 1.5px solid transparent;
+      color: var(--on-accent);
+      font-weight: 700;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .missing-font-btn:hover {
+      opacity: 0.92;
+    }
+
+    .missing-font-btn svg {
+      flex-shrink: 0;
+    }
+
+    .missing-font-replace-section {
+      display: grid;
+      gap: 6px;
+      margin-top: 4px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .missing-font-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .missing-font-input-wrapper {
+      display: flex;
+      width: 100%;
+    }
+
+    .missing-font-input {
+      width: 100%;
+      height: 30px;
+      padding: 0 8px;
+      border-radius: 6px;
+      border: 1px solid var(--line-strong);
+      background: var(--field);
+      color: var(--ink);
+      font-size: 12px;
+      font-family: inherit;
+    }
+
+    .missing-font-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .missing-font-btn.replace-btn {
+      background: linear-gradient(to top, #0076c4 0%, #2b99ff 100%) padding-box,
+                  linear-gradient(to top, #0c8eea 0%, #54a9f1 100%) border-box;
+      color: white;
+      height: 32px;
+    }
+
+    .missing-font-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .missing-font-btn.secondary-btn {
+      background: var(--field);
+      color: var(--ink);
+      border: 1px solid var(--line-strong);
+      height: 32px;
+      font-weight: 500;
+      font-size: 10px;
+      white-space: normal;
+      line-height: 1.2;
+      padding: 2px 4px;
+    }
+
+    .missing-font-btn.close-btn {
+      background: var(--field);
+      color: var(--ink);
+      border: 1px solid var(--line-strong);
+      height: 32px;
+      font-weight: 500;
+    }
+
+    .searchable-select-container {
+      position: relative;
+      width: 100%;
+    }
+
+    .font-dropdown-list {
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      right: 0;
+      margin-bottom: 4px;
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--panel);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+      z-index: 30;
+    }
+
+    .font-dropdown-list.hidden {
+      display: none;
+    }
+
+    .font-dropdown-item {
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s;
+    }
+
+    .font-dropdown-item:hover {
+      background: var(--field);
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -1066,8 +1297,53 @@
     </div>
   </div>
 
+  <div id="missingFontDialog" class="missing-font-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="missingFontDialogTitle">
+    <div class="missing-font-card">
+      <div class="missing-font-header">
+        <div class="missing-font-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <h3 id="missingFontDialogTitle">Missing Fonts Detected</h3>
+      </div>
+      <p>HTML yang kamu convert menggunakan font yang belum terinstall. Morphus sudah mendownload font-font ini &mdash; silakan install atau ganti dengan font alternatif.</p>
+      <ul id="missingFontList" class="missing-font-list"></ul>
+
+      <!-- Replace Font Section -->
+      <div class="missing-font-replace-section">
+        <label for="replacementFontInput" class="missing-font-label">Ganti dengan font alternatif:</label>
+        <div class="missing-font-input-wrapper">
+          <div class="searchable-select-container">
+            <input type="text" id="replacementFontInput" class="missing-font-input" value="Inter" placeholder="Cari font..." autocomplete="off">
+            <div id="fontDropdownList" class="font-dropdown-list hidden"></div>
+          </div>
+        </div>
+        <button id="replaceFontsBtn" class="missing-font-btn replace-btn" type="button">
+          Ganti &amp; Build
+        </button>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="missing-font-actions">
+        <button id="openFontFolderBtn" class="missing-font-btn secondary-btn" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          Open Folder &amp; Close Figma
+        </button>
+        <button id="closePluginBtn" class="missing-font-btn close-btn" type="button">
+          Tutup Plugin
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const BENCHMARK_URL = 'https://figmaeval.vercel.app';
+    let availableFamilies = [];
     const CONVERTER_STATUS_URL = 'http://localhost:3210';
     const PRESETS = {
       desktop: { width: 1440, height: 900 },
@@ -1121,6 +1397,13 @@
     const converterDialogMessage = document.getElementById('converterDialogMessage');
     const openConverterBtn = document.getElementById('openConverterBtn');
     const retryConverterBtn = document.getElementById('retryConverterBtn');
+    const missingFontDialog = document.getElementById('missingFontDialog');
+    const missingFontList = document.getElementById('missingFontList');
+    const openFontFolderBtn = document.getElementById('openFontFolderBtn');
+    const replaceFontsBtn = document.getElementById('replaceFontsBtn');
+    const replacementFontInput = document.getElementById('replacementFontInput');
+    const closePluginBtn = document.getElementById('closePluginBtn');
+    const fontDropdownList = document.getElementById('fontDropdownList');
     const htmlEl = document.documentElement;
     const sysDark = window.matchMedia('(prefers-color-scheme: dark)');
     const chips = document.querySelectorAll('.chip[data-preset]');
@@ -1839,6 +2122,15 @@
         buildBtn.disabled = false;
         showConverterDialog(msg.message);
       }
+
+      if (msg.type === 'MISSING_FONTS') {
+        stopFakeProgress();
+        progressFill.style.width = '0%';
+        buildBtn.disabled = false;
+        setStatus('Missing fonts detected.', 'error');
+        availableFamilies = msg.availableFamilies || [];
+        showMissingFontDialog(msg.fonts || []);
+      }
     };
 
     applyTheme(state.currentTheme);
@@ -1877,6 +2169,120 @@
       converterDialog.classList.add('hidden');
       scheduleUiResize();
     }
+
+    function showMissingFontDialog(fonts) {
+      missingFontList.innerHTML = '';
+      for (var i = 0; i < fonts.length; i++) {
+        var font = fonts[i];
+        var li = document.createElement('li');
+        li.textContent = (font.family + ' ' + (font.style || '')).trim();
+        missingFontList.appendChild(li);
+      }
+      replaceFontsBtn.disabled = false;
+      replaceFontsBtn.textContent = 'Ganti & Build';
+      openFontFolderBtn.disabled = false;
+      openFontFolderBtn.textContent = 'Open Folder & Close Figma';
+
+      missingFontDialog.classList.remove('hidden');
+      scheduleUiResize();
+    }
+
+    replaceFontsBtn.addEventListener('click', function () {
+      const family = replacementFontInput.value.trim() || 'Inter';
+      replaceFontsBtn.disabled = true;
+      replaceFontsBtn.textContent = 'Replacing & building...';
+      missingFontDialog.classList.add('hidden');
+      startFakeProgress();
+      setStatus('Replacing fonts and building snapshot...');
+      parent.postMessage({
+        pluginMessage: {
+          type: 'REPLACE_MISSING_FONTS',
+          replacementFamily: family,
+        },
+      }, '*');
+    });
+
+    closePluginBtn.addEventListener('click', function () {
+      parent.postMessage({
+        pluginMessage: { type: 'CLOSE_PLUGIN' },
+      }, '*');
+    });
+
+    openFontFolderBtn.addEventListener('click', function () {
+      openFontFolderBtn.disabled = true;
+      openFontFolderBtn.textContent = 'Opening folder & closing Figma...';
+      parent.postMessage({
+        pluginMessage: { type: 'OPEN_FONT_FOLDER' },
+      }, '*');
+    });
+
+    function renderDropdownOptions(query) {
+      fontDropdownList.innerHTML = '';
+      const normalizedQuery = (query || '').toLowerCase().trim();
+      
+      let filtered = availableFamilies.filter(function (family) {
+        return family.toLowerCase().indexOf(normalizedQuery) !== -1;
+      });
+
+      if (normalizedQuery === '') {
+        const priority = ['Inter', 'Roboto', 'Arial', 'Segoe UI', 'Helvetica', 'Times New Roman'];
+        const priorityItems = [];
+        const otherItems = [];
+        
+        for (var i = 0; i < filtered.length; i++) {
+          if (priority.indexOf(filtered[i]) !== -1) {
+            priorityItems.push(filtered[i]);
+          } else {
+            otherItems.push(filtered[i]);
+          }
+        }
+        
+        priorityItems.sort(function(a, b) {
+          return priority.indexOf(a) - priority.indexOf(b);
+        });
+        
+        filtered = priorityItems.concat(otherItems);
+      }
+
+      const displayList = filtered.slice(0, 200);
+      
+      if (displayList.length === 0) {
+        const item = document.createElement('div');
+        item.className = 'font-dropdown-item';
+        item.textContent = 'No matching fonts';
+        item.style.color = 'var(--muted)';
+        item.style.cursor = 'default';
+        fontDropdownList.appendChild(item);
+      } else {
+        for (var i = 0; i < displayList.length; i++) {
+          (function (family) {
+            const item = document.createElement('div');
+            item.className = 'font-dropdown-item';
+            item.textContent = family;
+            item.addEventListener('click', function () {
+              replacementFontInput.value = family;
+              fontDropdownList.classList.add('hidden');
+            });
+            fontDropdownList.appendChild(item);
+          })(displayList[i]);
+        }
+      }
+      fontDropdownList.classList.remove('hidden');
+    }
+
+    replacementFontInput.addEventListener('focus', function () {
+      renderDropdownOptions(replacementFontInput.value);
+    });
+
+    replacementFontInput.addEventListener('input', function () {
+      renderDropdownOptions(replacementFontInput.value);
+    });
+
+    document.addEventListener('click', function (event) {
+      if (!event.target.closest('.searchable-select-container')) {
+        fontDropdownList.classList.add('hidden');
+      }
+    });
 
     function openConverterStatusPage() {
       let opened = null;

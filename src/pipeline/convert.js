@@ -67,6 +67,7 @@ async function convertWithExtractor({ extractor, source, viewport, baseUrl = nul
       ...(baseUrl ? { baseUrl } : {}),
       ...getFontInstallMeta(fontInstallation),
     },
+    missingFonts: getMissingFonts(fontInstallation),
     warnings: [],
     figmaTree,
   };
@@ -97,6 +98,20 @@ function getFontInstallMeta(summary) {
       })),
     },
   };
+}
+
+function getMissingFonts(summary) {
+  if (!summary || !summary.enabled) {
+    return [];
+  }
+  const missing = [];
+  for (const err of summary.errors || []) {
+    missing.push({ family: err.family, style: err.style, reason: err.message || 'install-error' });
+  }
+  for (const skip of summary.skipped || []) {
+    missing.push({ family: skip.family, style: skip.style, reason: skip.reason || 'skipped' });
+  }
+  return missing;
 }
 
 function reportFontInstallation(summary) {
