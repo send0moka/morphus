@@ -3014,7 +3014,7 @@ function isRenderedSingleLineText(spec) {
     return false;
   }
 
-  return height <= Math.max(lineHeight * 1.4, lineHeight + 4);
+  return height <= Math.max(lineHeight * 1.85, lineHeight + 10);
 }
 
 async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
