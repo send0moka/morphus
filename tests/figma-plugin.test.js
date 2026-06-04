@@ -1010,6 +1010,45 @@ test('applies child fill sizing from the snapshot', async () => {
   expect(header.primaryAxisSizingMode).toBe('FIXED');
 });
 
+test('normalizes legacy stretch counter-axis alignment before touching Figma', async () => {
+  const { figma, page } = createFigmaMock();
+  const context = {
+    figma,
+    __html__: '',
+    console,
+    fetch,
+    setTimeout,
+    Promise,
+    TextEncoder,
+  };
+  vm.createContext(context);
+  vm.runInContext(readFileSync('./figma-plugin/code.js', 'utf8'), context);
+
+  await context.buildFromSnapshot({
+    figmaTree: [
+      frameSpec('div.stretch-row', {
+        width: 320,
+        height: 80,
+        layoutMode: 'HORIZONTAL',
+        primaryAxisAlignItems: 'MIN',
+        counterAxisAlignItems: 'STRETCH',
+        children: [
+          frameSpec('div.child', {
+            width: 80,
+            height: 80,
+            layoutSizingVertical: 'FILL',
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const row = page.children[0];
+  expect(row.counterAxisAlignItems).toBe('MIN');
+  expect(row.counterAxisSizingMode).toBe('FIXED');
+  expect(row.children[0].layoutSizingVertical).toBe('FILL');
+});
+
 test('applies auto-layout wrap properties from the snapshot', async () => {
   const { figma, page } = createFigmaMock();
   const context = {

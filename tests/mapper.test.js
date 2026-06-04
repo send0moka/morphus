@@ -526,8 +526,10 @@ test('keeps multi-item transparent flex rows centered and stretchable', () => {
 
   expect(builtHeader.layoutSizingHorizontal).toBe('FILL');
   expect(builtHeader.primaryAxisAlignItems).toBe('CENTER');
-  expect(builtHeader.counterAxisAlignItems).toBe('STRETCH');
+  expect(builtHeader.counterAxisAlignItems).toBe('MIN');
+  expect(builtHeader.counterAxisSizingMode).toBe('FIXED');
   expect(builtTitle.layoutSizingHorizontal).toBe('FILL');
+  expect(builtTitle.layoutSizingVertical).toBe('FILL');
 });
 
 test('maps wrapped flex rows to Figma auto-layout wrap without class-specific rules', () => {

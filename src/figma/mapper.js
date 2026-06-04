@@ -1729,6 +1729,7 @@ function withFlexSizing(node, flowChildren, layout) {
   const counterFreeSpace = measureFlexFreeSpace(node, flowChildren, axis === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL');
   const primaryAlign = String(result.primaryAxisAlignItems || 'MIN').toUpperCase();
   const counterAlign = String(result.counterAxisAlignItems || 'MIN').toUpperCase();
+  const counterStretch = String(node.computed.alignItems || '').toLowerCase() === 'stretch';
   const wraps = result.layoutWrap === 'WRAP';
 
   if (hasMainAxisFillChild(node, flowChildren, axis)
@@ -1740,7 +1741,7 @@ function withFlexSizing(node, flowChildren, layout) {
     result.primaryAxisSizingMode = 'FIXED';
   }
 
-  if (wraps || counterFreeSpace > 2 || counterAlign === 'CENTER' || counterAlign === 'MAX' || counterAlign === 'STRETCH') {
+  if (wraps || counterFreeSpace > 2 || counterStretch || counterAlign === 'CENTER' || counterAlign === 'MAX') {
     result.counterAxisSizingMode = 'FIXED';
   }
 

@@ -2590,6 +2590,29 @@ function applyChildLayoutSizing(node, spec) {
   }
 }
 
+function normalizePrimaryAxisAlignItems(value) {
+  const align = String(value || '').toUpperCase();
+  if (align === 'MIN' || align === 'CENTER' || align === 'MAX' || align === 'SPACE_BETWEEN') {
+    return align;
+  }
+  return null;
+}
+
+function normalizeCounterAxisAlignItems(value) {
+  const align = String(value || '').toUpperCase();
+  if (align === 'STRETCH') {
+    return 'MIN';
+  }
+  if (align === 'MIN' || align === 'CENTER' || align === 'MAX' || align === 'BASELINE') {
+    return align;
+  }
+  return null;
+}
+
+function isCounterAxisStretch(value) {
+  return String(value || '').toUpperCase() === 'STRETCH';
+}
+
 async function buildTextNode(spec, parentLayoutMode, styleRegistry) {
   const textRuns = getAlignedTextRuns(spec);
 
@@ -3051,8 +3074,10 @@ async function buildFrameNode(spec, parentLayoutMode, styleRegistry) {
 
   if (spec.layoutMode && spec.layoutMode !== 'NONE') {
     frame.layoutMode = spec.layoutMode;
-    if (spec.primaryAxisAlignItems) frame.primaryAxisAlignItems = spec.primaryAxisAlignItems;
-    if (spec.counterAxisAlignItems) frame.counterAxisAlignItems = spec.counterAxisAlignItems;
+    const primaryAxisAlignItems = normalizePrimaryAxisAlignItems(spec.primaryAxisAlignItems);
+    const counterAxisAlignItems = normalizeCounterAxisAlignItems(spec.counterAxisAlignItems);
+    if (primaryAxisAlignItems) frame.primaryAxisAlignItems = primaryAxisAlignItems;
+    if (counterAxisAlignItems) frame.counterAxisAlignItems = counterAxisAlignItems;
     if (spec.itemSpacing !== undefined) frame.itemSpacing = spec.itemSpacing;
     if (spec.layoutWrap) {
       try {
@@ -3314,6 +3339,7 @@ function applySmartAutoLayoutSizing(frame, spec, strategy) {
     itemSpacing: pickNumber(sourceSpec.itemSpacing, frame.itemSpacing),
     primaryAxisAlignItems: frame.primaryAxisAlignItems || sourceSpec.primaryAxisAlignItems,
     counterAxisAlignItems: frame.counterAxisAlignItems || sourceSpec.counterAxisAlignItems,
+    counterAxisStretch: isCounterAxisStretch(sourceSpec.counterAxisAlignItems),
     fills: sourceSpec.fills || [],
     strokes: sourceSpec.strokes || [],
     effects: sourceSpec.effects || [],
@@ -3422,7 +3448,7 @@ function shouldFixAxis(spec, children, axisRole) {
     return hasSurface;
   }
 
-  if (align === 'CENTER' || align === 'MAX' || align === 'STRETCH') {
+  if (align === 'CENTER' || align === 'MAX' || spec.counterAxisStretch) {
     return true;
   }
 

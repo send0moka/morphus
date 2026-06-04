@@ -61,7 +61,8 @@ type FigmaNode = {
   paddingLeft?: number;
   layoutMode?: "HORIZONTAL" | "VERTICAL" | "NONE";
   primaryAxisAlignItems?: "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
-  counterAxisAlignItems?: "MIN" | "CENTER" | "MAX" | "STRETCH" | "BASELINE";
+  counterAxisAlignItems?: "MIN" | "CENTER" | "MAX" | "BASELINE";
+  // CSS align-items: stretch is represented by child layoutSizing* = "FILL".
   itemSpacing?: number;
   layoutPositioning?: "AUTO" | "ABSOLUTE";
   clipsContent?: boolean;

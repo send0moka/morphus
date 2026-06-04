@@ -39,7 +39,7 @@ test('exposes stable flex alignment lookup values', () => {
     'flex-start': 'MIN',
     center: 'CENTER',
     'flex-end': 'MAX',
-    stretch: 'STRETCH',
+    stretch: 'MIN',
     baseline: 'BASELINE',
   });
 });

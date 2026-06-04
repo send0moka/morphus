@@ -99,11 +99,13 @@ export const JUSTIFY_MAP = {
 
 /**
  * Convert CSS align-items → Figma counterAxisAlignItems.
+ * Figma's parent counter axis enum does not include STRETCH; CSS stretch is
+ * represented by FILL sizing on children that fill the rendered counter axis.
  */
 export const ALIGN_MAP = {
   'flex-start': 'MIN',
   'center': 'CENTER',
   'flex-end': 'MAX',
-  'stretch': 'STRETCH',
+  'stretch': 'MIN',
   'baseline': 'BASELINE',
 };
